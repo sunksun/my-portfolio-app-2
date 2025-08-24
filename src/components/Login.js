@@ -1,66 +1,47 @@
-import React, { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+// src/components/Login.js
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
 
 export default function Login() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [err, setErr] = useState("");
   const navigate = useNavigate();
 
-  async function handleSubmit(e) {
+  const onSubmit = async (e) => {
     e.preventDefault();
-
+    setErr("");
     try {
-      setError('');
-      setLoading(true);
-      await login(email, password);
-      // redirect ตามสิทธิ์
-      if (email === 'phattharaphong1211@gmail.com') {
-        navigate('/admin-dashboard');
-      } else {
-        navigate('/dashboard');
-      }
+      await signInWithEmailAndPassword(getAuth(), email.trim(), password);
+      navigate("/dashboard"); // แก้ path ตามที่ต้องการ
     } catch (error) {
-      setError('เข้าสู่ระบบไม่สำเร็จ');
+      setErr(error.message || "เข้าสู่ระบบไม่สำเร็จ");
     }
-    setLoading(false);
-  }
+  };
 
   return (
-    <div className="login-container">
-      <form onSubmit={handleSubmit}>
-        <h2>เข้าสู่ระบบ</h2>
-        {error && <div className="error">{error}</div>}
-        
-        <div className="form-group">
-          <label>อีเมล</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </div>
-        
-        <div className="form-group">
-          <label>รหัสผ่าน</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </div>
-        
-        <button disabled={loading} type="submit">
+    <div className="max-w-sm mx-auto p-6">
+      <h1 className="text-xl font-bold mb-4">เข้าสู่ระบบ</h1>
+      <form className="space-y-3" onSubmit={onSubmit}>
+        <input
+          className="border w-full px-3 py-2 rounded"
+          placeholder="อีเมล"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <input
+          className="border w-full px-3 py-2 rounded"
+          placeholder="รหัสผ่าน"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        {err && <div className="text-red-600 text-sm">{err}</div>}
+        <button className="w-full bg-black text-white rounded px-3 py-2">
           เข้าสู่ระบบ
         </button>
-        <div className="text-center">
-          ยังไม่มีบัญชี? <a href="/register">สมัครสมาชิก</a>
-        </div>
       </form>
     </div>
   );

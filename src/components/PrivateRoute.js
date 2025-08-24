@@ -1,19 +1,40 @@
-// src/components/PrivateRoute.js
-import React from 'react';
-import { Navigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import React from "react";
+import { Navigate, Outlet } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
-export default function PrivateRoute({ children, requiredRole }) {
-  const { currentUser } = useAuth();
-  if (!currentUser) return <Navigate to="/login" />;
+export default function RequireAuth() {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="p-6">กำลังตรวจสอบสิทธิ์...</div>;
+  if (!user) return <Navigate to="/login" replace />;
+  return <Outlet />;
+}
 
-  // ตรวจสอบสิทธิ์ admin
-  if (requiredRole === 'admin' && currentUser.email !== 'phattharaphong1211@gmail.com') {
-    return <Navigate to="/login" />;
-  }
-  // ตรวจสอบสิทธิ์ user (ไม่ใช่ admin)
-  if (requiredRole === 'user' && currentUser.email === 'phattharaphong1211@gmail.com') {
-    return <Navigate to="/dashboard" />; // หรือ redirect ไปหน้า admin
-  }
-  return children;
+export function RequireAdmin() {
+  const { user, loading } = useAuth();
+  const [ok, setOk] = React.useState(undefined);
+
+  React.useEffect(() => {
+    async function check() {
+      if (!user) return setOk(false);
+      try {
+        const auth = getAuth();
+        const token = await auth.currentUser.getIdTokenResult(true);
+        if (token?.claims?.admin) return setOk(true); // custom claim
+      } catch {}
+      try {
+        const db = getFirestore();
+        const snap = await getDoc(doc(db, "ADMIN", user.uid)); // fallback firestore
+        setOk(snap.exists());
+      } catch {
+        setOk(false);
+      }
+    }
+    check();
+  }, [user]);
+
+  if (loading || ok === undefined) return <div className="p-6">กำลังตรวจสอบสิทธิ์แอดมิน...</div>;
+  if (!user || !ok) return <div className="p-6 text-rose-600">ไม่มีสิทธิ์แอดมิน</div>;
+  return <Outlet />;
 }

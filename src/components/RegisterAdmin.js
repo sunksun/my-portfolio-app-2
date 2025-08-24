@@ -2,6 +2,7 @@
 import React, { useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
+import { getFirestore, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 export default function Register() {
   const emailRef = useRef();
@@ -11,6 +12,7 @@ export default function Register() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const db = getFirestore();
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -32,7 +34,15 @@ export default function Register() {
     try {
       setError('');
       setLoading(true);
-      await signup(emailRef.current.value, passwordRef.current.value);
+      const userCredential = await signup(emailRef.current.value, passwordRef.current.value);
+      const user = userCredential.user;
+      await addDoc(collection(db, 'admins'), {
+        admin_id: user.uid,
+        username: emailRef.current.value,
+        password: passwordRef.current.value,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp()
+      });
       navigate('/dashboard');
     } catch (error) {
       if (error.code === 'auth/email-already-in-use') {

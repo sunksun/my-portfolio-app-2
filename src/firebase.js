@@ -1,29 +1,26 @@
-// Import the functions you need from the SDKs you need
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+// src/firebase.js
+import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
+import { getAnalytics, isSupported } from "firebase/analytics";
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyAJEkKYNDPk1WEPLUgP1FLzlf6UDeBqpQQ",
-  authDomain: "e-portfolio-afe64.firebaseapp.com",
-  projectId: "e-portfolio-afe64",
-  storageBucket: "e-portfolio-afe64.firebasestorage.app",
-  messagingSenderId: "403907146782",
-  appId: "1:403907146782:web:0b9c8f7b34a429a233aa0f",
-  measurementId: "G-HNYRG92KKF"
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || import.meta?.env?.VITE_FIREBASE_API_KEY,
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || import.meta?.env?.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || import.meta?.env?.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || import.meta?.env?.VITE_FIREBASE_STORAGE_BUCKET, // ต้องลงท้าย .appspot.com
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || import.meta?.env?.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_FIREBASE_APP_ID || import.meta?.env?.VITE_FIREBASE_APP_ID,
+  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID || import.meta?.env?.VITE_FIREBASE_MEASUREMENT_ID, // มี/ไม่มีก็ได้
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+export const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+export const db = getFirestore(app);
+export const storage = getStorage(app);
 
-// Initialize Firebase Authentication and get a reference to the service
-const auth = getAuth(app);
-const db = getFirestore(app);
-
-// Export auth and db instance
-export { auth, db };
-export default app;
+// เปิด analytics ถ้ารองรับ
+if (firebaseConfig.measurementId) {
+  isSupported().then(ok => { if (ok) getAnalytics(app); });
+}

@@ -41,6 +41,14 @@ export default function UserManagement() {
     <div className="p-6 max-w-3xl mx-auto">
       <h2 className="text-2xl font-bold mb-4">เพิ่ม / ลบ / แก้ไขผู้ใช้งาน</h2>
 
+      {/* ปุ่มย้อนกลับ */}
+      <div className="mb-4 flex justify-start">
+        <button
+          type="button"
+          onClick={() => window.history.back()}
+          className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm shadow"
+        >ย้อนกลับ</button>
+      </div>
       <div className="mb-4 space-y-2">
         <input
           type="text"

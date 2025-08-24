@@ -1,85 +1,39 @@
-import React, { useRef, useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+// components/Signup.js
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Signup() {
-  const emailRef = useRef();
-  const passwordRef = useRef();
-  const passwordConfirmRef = useRef();
   const { signup } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  async function handleSubmit(e) {
+  const submit = async (e) => {
     e.preventDefault();
-
-    if (passwordRef.current.value !== passwordConfirmRef.current.value) {
-      return setError('รหัสผ่านไม่ตรงกัน');
-    }
-
-    if (passwordRef.current.value.length < 6) {
-      return setError('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
-    }
-
     try {
-      setError('');
-      setLoading(true);
-      await signup(emailRef.current.value, passwordRef.current.value);
-      navigate('/dashboard');
-    } catch (error) {
-      if (error.code === 'auth/email-already-in-use') {
-        setError('อีเมลนี้ถูกใช้งานแล้ว');
-      } else if (error.code === 'auth/weak-password') {
-        setError('รหัสผ่านอ่อนแอเกินไป');
-      } else {
-        setError('ไม่สามารถสร้างบัญชีได้');
-      }
+      setLoading(true); setError('');
+      await signup(email, password);
+      navigate('/login');
+    } catch (e) {
+      setError('สมัครไม่สำเร็จ');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }
+  };
 
   return (
-    <div className="register-container">
-      <div className="register-form">
-        <h2>สมัครสมาชิก</h2>
-        {error && <div className="alert alert-error">{error}</div>}
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label>อีเมล</label>
-            <input 
-              type="email" 
-              ref={emailRef} 
-              required 
-              placeholder="กรอกอีเมล"
-            />
-          </div>
-          <div className="form-group">
-            <label>รหัสผ่าน</label>
-            <input 
-              type="password" 
-              ref={passwordRef} 
-              required 
-              placeholder="กรอกรหัสผ่าน (อย่างน้อย 6 ตัวอักษร)"
-            />
-          </div>
-          <div className="form-group">
-            <label>ยืนยันรหัสผ่าน</label>
-            <input 
-              type="password" 
-              ref={passwordConfirmRef} 
-              required 
-              placeholder="กรอกรหัสผ่านอีกครั้ง"
-            />
-          </div>
-          <button disabled={loading} type="submit" className="btn btn-primary">
-            {loading ? 'กำลังสร้างบัญชี...' : 'สมัครสมาชิก'}
-          </button>
-        </form>
-        <div className="text-center">
-          มีบัญชีแล้ว? <Link to="/login">เข้าสู่ระบบ</Link>
-        </div>
-      </div>
+    <div className="min-h-screen grid place-items-center bg-slate-50 p-6">
+      <form onSubmit={submit} className="w-full max-w-sm bg-white border rounded-xl p-6">
+        <h1 className="text-xl font-semibold mb-4">สมัครสมาชิก</h1>
+        {error && <div className="text-red-600 text-sm mb-3">{error}</div>}
+        <input className="w-full border rounded-lg px-3 py-2 mb-3" type="email" placeholder="อีเมล" value={email} onChange={e=>setEmail(e.target.value)} />
+        <input className="w-full border rounded-lg px-3 py-2 mb-4" type="password" placeholder="รหัสผ่าน" value={password} onChange={e=>setPassword(e.target.value)} />
+        <button disabled={loading} className="w-full bg-indigo-600 text-white rounded-lg px-3 py-2">{loading? 'กำลังสมัคร…':'สมัคร'}</button>
+        <div className="text-sm mt-3">มีบัญชีแล้ว? <Link className="text-indigo-600" to="/login">เข้าสู่ระบบ</Link></div>
+      </form>
     </div>
   );
 }
