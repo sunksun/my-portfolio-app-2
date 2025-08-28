@@ -2,6 +2,7 @@
 import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
+import HomeScreen from "./homescreens/HomeScreen";
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
 import UserProfile from "./components/UserProfile";
@@ -9,7 +10,7 @@ import Education from "./components/Education";
 import WorkManagement from "./components/WorkManagement";
 import PortfolioBuilder from "./components/PortfolioBuilder";
 import AdminDashboard from "./components/AdminDashboard";
-import TemplateEdit from"./components/TemplateEdit";
+import TemplateEdit from "./components/TemplateEdit";
 import TemplateStyle from "./components/TemplateStyle";
 import RequireAuth, { RequireAdmin } from "./components/PrivateRoute";
 import UserLayout from "./components/UserLayout";
@@ -17,8 +18,9 @@ import UserLayout from "./components/UserLayout";
 export default function App() {
   return (
     <Routes>
-      {/* หน้าแรก → ส่งไป /dashboard */}
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      {/* หน้าแรก */}
+      <Route path="/" element={<HomeScreen />} />
+      <Route path="/home" element={<HomeScreen />} />
       <Route path="/login" element={<Login />} />
 
       {/* ต้องล็อกอินก่อน */}

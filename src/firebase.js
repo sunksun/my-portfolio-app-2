@@ -15,6 +15,13 @@ const firebaseConfig = {
   measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID || import.meta?.env?.VITE_FIREBASE_MEASUREMENT_ID, // มี/ไม่มีก็ได้
 };
 
+// ตรวจสอบ Firebase config
+if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId) {
+  console.error("Firebase configuration is missing required fields");
+} else {
+  console.log("Firebase initialized successfully");
+}
+
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);

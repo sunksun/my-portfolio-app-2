@@ -2,23 +2,9 @@
 import React, { useEffect, useState } from "react";
 import { getFirestore, doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
+import { User, Upload, Camera, Save, Eye, EyeOff, Phone, School, Target, Calendar, Sparkles, CheckCircle } from "lucide-react";
 
-const CLOUD = process.env.REACT_APP_CLOUDINARY_CLOUD || (import.meta?.env?.VITE_CLOUDINARY_CLOUD ?? "");
-const PRESET = process.env.REACT_APP_CLOUDINARY_PRESET || (import.meta?.env?.VITE_CLOUDINARY_PRESET ?? "");
-
-async function uploadToCloudinary(file) {
-  if (!file) throw new Error("No file");
-  console.log("CLOUD", CLOUD, "PRESET", PRESET, "file", file);
-  const form = new FormData();
-  form.append("file", file);
-  form.append("upload_preset", PRESET);
-  const res = await fetch(`https://api.cloudinary.com/v1_1/eportfolio_signed/auto/upload`, { method: "POST", body: form });
-  const text = await res.clone().text();
-  console.log("Cloudinary response", text);
-  if (!res.ok) throw new Error("อัปโหลดรูปไม่สำเร็จ");
-  const data = JSON.parse(text);
-  return data.secure_url;
-}
+import { uploadToCloudinary, createPreviewUrl } from "../utils/cloudinary";
 
 export default function UserProfile() {
   const { user, loading } = useAuth();
@@ -26,6 +12,7 @@ export default function UserProfile() {
 
   const [fetching, setFetching] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [form, setForm] = useState({
     displayName: "",
     email: "",
@@ -80,25 +67,41 @@ export default function UserProfile() {
     })();
   }, [user, loading, db]);
 
-  if (loading || fetching) return <div className="p-4">กำลังโหลด...</div>;
-  if (!user) return <div className="p-4">ยังไม่ได้เข้าสู่ระบบ</div>;
+  if (loading || fetching) return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <p className="text-gray-600">กำลังโหลดข้อมูลโปรไฟล์...</p>
+      </div>
+    </div>
+  );
+  
+  if (!user) return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center">
+      <div className="text-center">
+        <User className="mx-auto h-16 w-16 text-gray-400 mb-4" />
+        <p className="text-gray-600 text-lg">กรุณาเข้าสู่ระบบก่อนใช้งาน</p>
+      </div>
+    </div>
+  );
 
   const onChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const onPickPhoto = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
     try {
-      let url = "";
-      if (CLOUD && PRESET) {
-        url = await uploadToCloudinary(file);
-      } else {
-        // fallback preview (ถ้าไม่ได้ตั้งค่า Cloudinary)
-        url = URL.createObjectURL(file);
-      }
+      // ลอง Cloudinary ก่อน
+      const url = await uploadToCloudinary(file);
       setForm((f) => ({ ...f, photoURL: url }));
     } catch (err) {
-      alert(err.message || "อัปโหลดรูปไม่สำเร็จ");
+      console.warn("Cloudinary upload failed, using preview:", err.message);
+      // ใช้ fallback preview
+      const previewUrl = createPreviewUrl(file);
+      setForm((f) => ({ ...f, photoURL: previewUrl }));
+      
+      alert("⚠️ อัปโหลดไม่สำเร็จ\nใช้โหมดตัวอย่าง (รูปไม่ได้บันทึกจริง)\n\nกรุณาแก้ไข Cloudinary preset ในการตั้งค่า");
     }
   };
 
@@ -114,7 +117,8 @@ export default function UserProfile() {
         updatedAt: serverTimestamp(),
       };
       await updateDoc(ref, payload);
-      alert("บันทึกโปรไฟล์แล้ว");
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       // ถ้าเอกสารยังไม่มี (กรณีพิเศษ) ใช้ setDoc
       const ref = doc(db, "users", user.uid);
@@ -126,91 +130,275 @@ export default function UserProfile() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       }, { merge: true });
-      alert("บันทึกโปรไฟล์แล้ว");
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-  <div className="stack">
-    <div>
-      <h2>โปรไฟล์</h2>
-      <p className="text-sm text-slate-500">อัปเดตข้อมูลส่วนตัวและรูปโปรไฟล์</p>
-    </div>
-
-    <div className="grid gap-6 md:grid-cols-[260px_1fr]">
-      {/* รูปโปรไฟล์ */}
-      <div className="card">
-        <div className="aspect-square w-full overflow-hidden rounded-lg border bg-slate-50">
-          {form.photoURL ? (
-            <img src={form.photoURL} alt="avatar" className="h-full w-full object-cover" />
-          ) : (
-            <div className="grid h-full place-items-center text-slate-400">ไม่มีรูป</div>
-          )}
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      {/* Header */}
+      <div className="relative overflow-hidden bg-gradient-to-r from-blue-600 to-purple-600 text-white py-16">
+        <div className="absolute inset-0 bg-black/10"></div>
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <div className="flex justify-center mb-4">
+              <div className="rounded-full bg-white/20 p-3 backdrop-blur-sm">
+                <User className="h-8 w-8 text-white" />
+              </div>
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">จัดการโปรไฟล์</h1>
+            <p className="mt-2 text-xl text-blue-100">อัปเดตข้อมูลส่วนตัวและรูปโปรไฟล์ของคุณ</p>
+          </div>
         </div>
-        <label className="btn-primary w-full mt-3 cursor-pointer">
-          เลือกรูป
-          <input type="file" accept="image/*" onChange={onPickPhoto} className="hidden" />
-        </label>
       </div>
 
-      {/* ฟอร์ม */}
-      <div className="card">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="md:col-span-2">
-            <label>ชื่อ–นามสกุล</label>
-            <input name="displayName" value={form.displayName} onChange={onChange} />
+      {/* Main Content */}
+      <div className="relative -mt-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
+        <div className="grid gap-8 lg:grid-cols-[350px_1fr]">
+          
+          {/* Profile Picture Section */}
+          <div className="lg:sticky lg:top-8 lg:self-start">
+            <div className="bg-white rounded-2xl shadow-lg ring-1 ring-gray-200/50 p-6">
+              <div className="text-center">
+                <div className="relative inline-block">
+                  <div className="w-48 h-48 mx-auto rounded-2xl overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 ring-4 ring-white shadow-xl">
+                    {form.photoURL ? (
+                      <img src={form.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <User className="h-20 w-20 text-gray-400" />
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Upload overlay */}
+                  <label className="absolute inset-0 w-48 h-48 mx-auto rounded-2xl bg-black/50 opacity-0 hover:opacity-100 transition-opacity cursor-pointer flex items-center justify-center group">
+                    <div className="text-white text-center">
+                      <Camera className="h-8 w-8 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                      <span className="text-sm font-medium">เปลี่ยนรูป</span>
+                    </div>
+                    <input type="file" accept="image/*" onChange={onPickPhoto} className="hidden" />
+                  </label>
+                </div>
+                
+                <div className="mt-4">
+                  <h3 className="text-lg font-semibold text-gray-900">{form.displayName || 'ชื่อของคุณ'}</h3>
+                  <p className="text-gray-500">{form.email}</p>
+                  <div className="mt-2 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+                    <Sparkles className="w-3 h-3 mr-1" />
+                    {form.role === 'admin' ? 'ผู้ดูแลระบบ' : 'นักเรียน'}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Visibility Settings */}
+              <div className="mt-6 p-4 bg-gray-50 rounded-xl">
+                <div className="flex items-center gap-2 mb-3">
+                  {form.visibility === 'public' ? <Eye className="w-4 h-4 text-green-600" /> : <EyeOff className="w-4 h-4 text-gray-500" />}
+                  <label className="text-sm font-medium text-gray-700">การเผยแพร่โปรไฟล์</label>
+                </div>
+                <select 
+                  name="visibility" 
+                  value={form.visibility} 
+                  onChange={onChange}
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="private">🔒 ส่วนตัว</option>
+                  <option value="public">🌍 สาธารณะ</option>
+                  <option value="link-only">🔗 เฉพาะลิงก์</option>
+                </select>
+              </div>
+            </div>
           </div>
 
-          <div>
-            <label>อีเมล (อ่านอย่างเดียว)</label>
-            <input value={form.email} disabled className="bg-gray-50" />
-          </div>
-          <div>
-            <label>โรงเรียน/สถาบัน</label>
-            <input name="school" value={form.school} onChange={onChange} />
-          </div>
+          {/* Profile Form */}
+          <div className="space-y-8">
+            {/* Personal Information */}
+            <div className="bg-white rounded-2xl shadow-lg ring-1 ring-gray-200/50 p-6 sm:p-8">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="rounded-lg bg-blue-50 p-2">
+                  <User className="h-5 w-5 text-blue-600" />
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900">ข้อมูลส่วนตัว</h2>
+              </div>
 
-          <div>
-            <label>คณะที่ต้องการ</label>
-            <input name="facultyTarget" value={form.facultyTarget} onChange={onChange} />
-          </div>
-          <div>
-            <label>ปีการศึกษา</label>
-            <input name="year" value={form.year} onChange={onChange} />
-          </div>
+              <div className="grid gap-6 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">ชื่อ-นามสกุล</label>
+                  <input 
+                    name="displayName" 
+                    value={form.displayName} 
+                    onChange={onChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    placeholder="กรอกชื่อ-นามสกุลของคุณ"
+                  />
+                </div>
 
-          <div>
-            <label>เบอร์โทร</label>
-            <input name="phone" value={form.phone} onChange={onChange} />
-          </div>
-          <div>
-            <label>ทักษะ (คั่นด้วย ,)</label>
-            <input name="skills" value={form.skills} onChange={onChange} placeholder="React, Tailwind, PS" />
-          </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">อีเมล</label>
+                  <div className="relative">
+                    <input 
+                      value={form.email} 
+                      disabled 
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-500 cursor-not-allowed"
+                    />
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    </div>
+                  </div>
+                </div>
 
-          <div className="md:col-span-2">
-            <label>คำอธิบายสั้น ๆ</label>
-            <textarea name="bio" rows={3} value={form.bio} onChange={onChange} />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">เบอร์โทรศัพท์</label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input 
+                      name="phone" 
+                      value={form.phone} 
+                      onChange={onChange}
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                      placeholder="0xx-xxx-xxxx"
+                    />
+                  </div>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">คำอธิบายตัวเอง</label>
+                  <textarea 
+                    name="bio" 
+                    rows={4} 
+                    value={form.bio} 
+                    onChange={onChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-none"
+                    placeholder="เขียนเกี่ยวกับตัวคุณสั้น ๆ..."
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Education Information */}
+            <div className="bg-white rounded-2xl shadow-lg ring-1 ring-gray-200/50 p-6 sm:p-8">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="rounded-lg bg-emerald-50 p-2">
+                  <School className="h-5 w-5 text-emerald-600" />
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900">ข้อมูลการศึกษา</h2>
+              </div>
+
+              <div className="grid gap-6 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">โรงเรียน/สถาบัน</label>
+                  <div className="relative">
+                    <School className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input 
+                      name="school" 
+                      value={form.school} 
+                      onChange={onChange}
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                      placeholder="ชื่อโรงเรียน/มหาวิทยาลัย"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">ปีการศึกษา</label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input 
+                      name="year" 
+                      value={form.year} 
+                      onChange={onChange}
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                      placeholder="ปีการศึกษา 2568"
+                    />
+                  </div>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">คณะ/สาขาที่ต้องการ</label>
+                  <div className="relative">
+                    <Target className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input 
+                      name="facultyTarget" 
+                      value={form.facultyTarget} 
+                      onChange={onChange}
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                      placeholder="คณะหรือสาขาที่สนใจ"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Skills */}
+            <div className="bg-white rounded-2xl shadow-lg ring-1 ring-gray-200/50 p-6 sm:p-8">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="rounded-lg bg-purple-50 p-2">
+                  <Sparkles className="h-5 w-5 text-purple-600" />
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900">ทักษะและความสามารถ</h2>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">ทักษะ (คั่นด้วยเครื่องหมายจุลภาค)</label>
+                <input 
+                  name="skills" 
+                  value={form.skills} 
+                  onChange={onChange}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  placeholder="เช่น React, Photoshop, ภาษาอังกฤษ, การออกแบบ"
+                />
+                <p className="mt-2 text-xs text-gray-500">แยกแต่ละทักษะด้วยเครื่องหมายจุลภาค (,)</p>
+                
+                {/* Skills Preview */}
+                {form.skills && (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {form.skills.split(',').map((skill, index) => {
+                      const trimmedSkill = skill.trim();
+                      return trimmedSkill ? (
+                        <span key={index} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+                          {trimmedSkill}
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="flex items-center justify-between bg-white rounded-2xl shadow-lg ring-1 ring-gray-200/50 p-6">
+              {saveSuccess && (
+                <div className="flex items-center gap-2 text-green-600">
+                  <CheckCircle className="h-5 w-5" />
+                  <span className="text-sm font-medium">บันทึกข้อมูลเรียบร้อยแล้ว!</span>
+                </div>
+              )}
+              
+              <button 
+                onClick={onSave} 
+                disabled={saving}
+                className="ml-auto inline-flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium rounded-xl hover:from-blue-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+              >
+                {saving ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    กำลังบันทึก...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" />
+                    บันทึกโปรไฟล์
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
-
-        <div className="mt-4 flex items-center gap-3">
-          <label>การเผยแพร่</label>
-          <select name="visibility" value={form.visibility} onChange={onChange}>
-            <option value="private">ส่วนตัว</option>
-            <option value="public">สาธารณะ</option>
-            <option value="link-only">เฉพาะลิงก์</option>
-          </select>
-          <div className="ml-auto text-sm text-slate-500">สิทธิ์: {form.role}</div>
-        </div>
-
-        <button onClick={onSave} disabled={saving} className="btn-primary mt-5">
-          {saving ? "กำลังบันทึก..." : "บันทึกโปรไฟล์"}
-        </button>
       </div>
     </div>
-  </div>
   );
 }

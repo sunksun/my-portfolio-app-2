@@ -1,7 +1,8 @@
 // src/components/Login.js
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "../firebase";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -9,14 +10,42 @@ export default function Login() {
   const [err, setErr] = useState("");
   const navigate = useNavigate();
 
+  const getErrorMessage = (error) => {
+    switch (error.code) {
+      case 'auth/invalid-credential':
+        return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+      case 'auth/user-not-found':
+        return 'ไม่พบผู้ใช้งานนี้ในระบบ';
+      case 'auth/wrong-password':
+        return 'รหัสผ่านไม่ถูกต้อง';
+      case 'auth/invalid-email':
+        return 'รูปแบบอีเมลไม่ถูกต้อง';
+      case 'auth/user-disabled':
+        return 'บัญชีผู้ใช้ถูกปิดใช้งาน';
+      case 'auth/too-many-requests':
+        return 'มีการพยายามเข้าสู่ระบบมากเกินไป กรุณาลองใหม่ในภายหลัง';
+      default:
+        return error.message || 'เข้าสู่ระบบไม่สำเร็จ';
+    }
+  };
+
   const onSubmit = async (e) => {
     e.preventDefault();
     setErr("");
+    
+    if (!email || !password) {
+      setErr("กรุณากรอกอีเมลและรหัสผ่าน");
+      return;
+    }
+    
     try {
-      await signInWithEmailAndPassword(getAuth(), email.trim(), password);
-      navigate("/dashboard"); // แก้ path ตามที่ต้องการ
+      console.log("Attempting to sign in...");
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+      console.log("Sign in successful");
+      navigate("/dashboard");
     } catch (error) {
-      setErr(error.message || "เข้าสู่ระบบไม่สำเร็จ");
+      console.error("Login error:", error);
+      setErr(getErrorMessage(error));
     }
   };
 
