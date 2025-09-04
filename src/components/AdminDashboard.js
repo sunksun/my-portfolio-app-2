@@ -6,6 +6,8 @@ import {
   ArrowLeft
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { db } from "../firebase";
+import { collection, getDocs, query, where, orderBy, limit } from "firebase/firestore";
 
 // เปลี่ยน 'ชั้น/ห้อง' เป็นฟิลด์กำหนดเองได้ที่นี่
 const SECONDARY_FIELD = { key: "program", label: "แผนการเรียน" };
@@ -125,7 +127,7 @@ const DEMO = {
 export default function AdminDashboard() {
   const [tab, setTab] = useState("dashboard");
   const [q, setQ] = useState("");
-  const [stats, setStats] = useState(DEMO.stats);
+  const [stats, setStats] = useState({ students: 0, portfolios: 0, pending: 0, templates: 0 });
   const [subs, setSubs] = useState(DEMO.submissions);
   const [users, setUsers] = useState(DEMO.users);
   const [educations] = useState(DEMO.educations);
@@ -133,8 +135,90 @@ export default function AdminDashboard() {
   const [templates, setTemplates] = useState(DEMO.templates);
   const [categories, setCategories] = useState(DEMO.categories);
   const [toast, setToast] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(()=>{ /* TODO hook Firestore here */ }, []);
+  // ฟังก์ชันดึงข้อมูลสถิติจาก Firestore
+  const fetchStats = async () => {
+    try {
+      setLoading(true);
+      
+      // ดึงจำนวนผู้ใช้ทั้งหมด (students)
+      const usersSnapshot = await getDocs(collection(db, "users"));
+      const studentsCount = usersSnapshot.size;
+
+      // ดึงจำนวน portfolio ที่มีสถานะ approved
+      const portfoliosQuery = query(
+        collection(db, "PROFILE"),
+        where("status", "==", "approved")
+      );
+      const portfoliosSnapshot = await getDocs(portfoliosQuery);
+      const portfoliosCount = portfoliosSnapshot.size;
+
+      // ดึงจำนวน portfolio ที่รออนุมัติ
+      const pendingQuery = query(
+        collection(db, "PROFILE"),
+        where("status", "==", "pending")
+      );
+      const pendingSnapshot = await getDocs(pendingQuery);
+      const pendingCount = pendingSnapshot.size;
+
+      // ดึงจำนวนเทมเพลตที่ใช้งานอยู่
+      const templatesQuery = query(
+        collection(db, "TEMPLATE"),
+        where("is_active", "==", true)
+      );
+      const templatesSnapshot = await getDocs(templatesQuery);
+      const templatesCount = templatesSnapshot.size;
+
+      // อัปเดตสถิติ
+      setStats({
+        students: studentsCount,
+        portfolios: portfoliosCount,
+        pending: pendingCount,
+        templates: templatesCount
+      });
+
+    } catch (error) {
+      console.error("Error fetching stats:", error);
+      // ใช้ข้อมูล demo หากเกิดข้อผิดพลาด
+      setStats(DEMO.stats);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ฟังก์ชันดึงข้อมูลผู้ใช้จาก Firestore
+  const fetchUsers = async () => {
+    try {
+      const usersSnapshot = await getDocs(collection(db, "users"));
+      const usersData = [];
+      
+      usersSnapshot.forEach((doc) => {
+        const data = doc.data();
+        usersData.push({
+          user_id: doc.id,
+          name: data.name || "",
+          username: data.username || "",
+          email: data.email || "",
+          status: data.status || "active",
+          access_level: data.access_level || "student",
+          program: data.program || "",
+          created_at: data.created_at?.toDate ? data.created_at.toDate().toLocaleDateString('th-TH') : "",
+        });
+      });
+
+      setUsers(usersData);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      // ใช้ข้อมูล demo หากเกิดข้อผิดพลาด
+      setUsers(DEMO.users);
+    }
+  };
+
+  useEffect(() => {
+    fetchStats();
+    fetchUsers(); // เรียกข้อมูลผู้ใช้เมื่อโหลดหน้า
+  }, []);
 
   const filteredUsers = useMemo(()=>{
     if(!q.trim()) return users;
@@ -191,10 +275,55 @@ export default function AdminDashboard() {
             <section className="space-y-6">
               <h1 className="text-xl md:text-2xl font-semibold text-slate-900 flex items-center gap-2"><LayoutGrid className="h-5 w-5"/> ภาพรวมระบบ</h1>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard icon={Users} label="นักเรียนทั้งหมด" value={stats.students} sub="มีการเข้าใช้งานภายใน 7 วัน 186 คน" />
-                <StatCard icon={BookOpen} label="พอร์ตโฟลิโอ" value={stats.portfolios} sub="อัปเดตล่าสุด 24 ชม.ที่ผ่านมา" />
-                <StatCard icon={FileCheck2} label="รออนุมัติ" value={stats.pending} sub="ตรวจสอบก่อนเผยแพร่" />
-                <StatCard icon={Palette} label="เทมเพลตที่ใช้" value={stats.templates} sub="จัดการ/ซ่อนบางแบบ" />
+                {loading ? (
+                  // Loading state
+                  <>
+                    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/60 p-4 md:p-5 animate-pulse">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-xl bg-slate-200"></div>
+                        <div>
+                          <div className="h-4 bg-slate-200 rounded w-20 mb-2"></div>
+                          <div className="h-8 bg-slate-200 rounded w-12"></div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/60 p-4 md:p-5 animate-pulse">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-xl bg-slate-200"></div>
+                        <div>
+                          <div className="h-4 bg-slate-200 rounded w-20 mb-2"></div>
+                          <div className="h-8 bg-slate-200 rounded w-12"></div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/60 p-4 md:p-5 animate-pulse">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-xl bg-slate-200"></div>
+                        <div>
+                          <div className="h-4 bg-slate-200 rounded w-20 mb-2"></div>
+                          <div className="h-8 bg-slate-200 rounded w-12"></div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/60 p-4 md:p-5 animate-pulse">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-xl bg-slate-200"></div>
+                        <div>
+                          <div className="h-4 bg-slate-200 rounded w-20 mb-2"></div>
+                          <div className="h-8 bg-slate-200 rounded w-12"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  // Data loaded
+                  <>
+                    <StatCard icon={Users} label="นักเรียนทั้งหมด" value={stats.students} sub={`อัปเดตแล้ว ${new Date().toLocaleDateString('th-TH')}`} />
+                    <StatCard icon={BookOpen} label="พอร์ตโฟลิโอที่อนุมัติแล้ว" value={stats.portfolios} sub="พร้อมเผยแพร่สู่สาธารณะ" />
+                    <StatCard icon={FileCheck2} label="รออนุมัติ" value={stats.pending} sub="ตรวจสอบก่อนเผยแพร่" />
+                    <StatCard icon={Palette} label="เทมเพลตที่ใช้งาน" value={stats.templates} sub="เทมเพลตที่เปิดใช้งาน" />
+                  </>
+                )}
               </div>
               <div className="rounded-2xl bg-gradient-to-r from-indigo-50 to-sky-50 ring-1 ring-slate-200/70 p-4 md:p-6">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">

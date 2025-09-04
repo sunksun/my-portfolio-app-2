@@ -2,7 +2,7 @@
 import React, { useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
-import { getFirestore, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 export default function Register() {
   const emailRef = useRef();
@@ -36,14 +36,13 @@ export default function Register() {
       setLoading(true);
       const userCredential = await signup(emailRef.current.value, passwordRef.current.value);
       const user = userCredential.user;
-      await addDoc(collection(db, 'admins'), {
+      await setDoc(doc(db, 'ADMIN', user.uid), {
         admin_id: user.uid,
         username: emailRef.current.value,
-        password: passwordRef.current.value,
         created_at: serverTimestamp(),
         updated_at: serverTimestamp()
       });
-      navigate('/dashboard');
+      navigate('/admin-dashboard');
     } catch (error) {
       if (error.code === 'auth/email-already-in-use') {
         setError('อีเมลนี้ถูกใช้งานแล้ว');

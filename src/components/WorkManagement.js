@@ -48,6 +48,7 @@ export default function WorkManagement() {
   const [form, setForm] = useState({ 
     title: '', 
     category: '', 
+    year: '',
     description: '', 
     tags: '',
     file: null,
@@ -198,6 +199,7 @@ export default function WorkManagement() {
         user_id: user.uid,
         title: form.title.trim(),
         category: form.category || 'อื่นๆ',
+        year: form.year.trim(),
         description: form.description.trim(),
         tags: form.tags ? form.tags.split(',').map(tag => tag.trim()).filter(Boolean) : [],
         file_path: fileUrl,
@@ -236,6 +238,7 @@ export default function WorkManagement() {
     setForm({
       title: work.title || '',
       category: work.category || '',
+      year: work.year || '',
       description: work.description || '',
       tags: work.tags ? work.tags.join(', ') : '',
       file: null,
@@ -264,6 +267,7 @@ export default function WorkManagement() {
     setForm({ 
       title: '', 
       category: '', 
+      year: '',
       description: '', 
       tags: '',
       file: null,
@@ -449,6 +453,25 @@ export default function WorkManagement() {
                         <option key={category} value={category}>{category}</option>
                       ))}
                     </select>
+                  </div>
+
+                  {/* Year */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      ปี พ.ศ.
+                    </label>
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        value={form.year}
+                        onChange={(e) => setForm({ ...form, year: e.target.value })}
+                        className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                        placeholder="เช่น 2567"
+                        maxLength="4"
+                        pattern="[0-9]{4}"
+                      />
+                    </div>
                   </div>
 
                   {/* Tags */}
@@ -667,11 +690,18 @@ export default function WorkManagement() {
                       </div>
                     </div>
 
-                    {work.category && (
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 mb-3">
-                        {work.category}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2 mb-3">
+                      {work.category && (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">
+                          {work.category}
+                        </span>
+                      )}
+                      {work.year && (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700">
+                          {work.year}
+                        </span>
+                      )}
+                    </div>
 
                     {work.description && (
                       <p className="text-sm text-gray-600 mb-4 line-clamp-3">
@@ -768,6 +798,11 @@ export default function WorkManagement() {
                         {work.category && (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">
                             {work.category}
+                          </span>
+                        )}
+                        {work.year && (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700">
+                            {work.year}
                           </span>
                         )}
                         <span className="flex items-center gap-1">

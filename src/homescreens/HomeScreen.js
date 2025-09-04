@@ -20,6 +20,12 @@ export default function HomeScreen() {
                 เข้าสู่ระบบ
               </Link>
               <Link
+                to="/signup"
+                className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+              >
+                สมัครใช้งานระบบ
+              </Link>
+              <Link
                 to="/login"
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
               >

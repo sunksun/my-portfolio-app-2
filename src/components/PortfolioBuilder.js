@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getFirestore, collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
+import { getFirestore, collection, query, where, orderBy, getDocs, doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { FileText, Palette, Eye, Download, Plus, X, Settings, Sparkles, User, Award, GraduationCap, Briefcase, CheckSquare, Square, ArrowLeft, ArrowRight } from 'lucide-react';
 
@@ -19,7 +19,7 @@ export default function PortfolioBuilder() {
   const [awardInput, setAwardInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [currentStep, setCurrentStep] = useState(1);
-  const { currentUser } = useAuth();
+  const { user: currentUser } = useAuth();
   const db = getFirestore();
 
   useEffect(() => {
@@ -31,7 +31,15 @@ export default function PortfolioBuilder() {
         const profileRef = doc(db, 'users', currentUser.uid);
         const profileSnap = await getDoc(profileRef);
         if (profileSnap.exists()) {
-          setProfile(profileSnap.data());
+          const profileData = profileSnap.data();
+          setProfile(profileData);
+          
+          // Populate form fields with existing data
+          if (profileData.portfolioTitle) setPortfolioTitle(profileData.portfolioTitle);
+          if (profileData.portfolioDesc) setPortfolioDesc(profileData.portfolioDesc);
+          if (profileData.colorTheme) setColorTheme(profileData.colorTheme);
+          if (profileData.skills && Array.isArray(profileData.skills)) setSkills(profileData.skills);
+          if (profileData.awards && Array.isArray(profileData.awards)) setAwards(profileData.awards);
         }
 
         // Fetch education
@@ -64,6 +72,29 @@ export default function PortfolioBuilder() {
     setSelectedWorks(selectedWorks.includes(id)
       ? selectedWorks.filter(wid => wid !== id)
       : [...selectedWorks, id]);
+  };
+
+  // Save customization data to Firebase
+  const saveCustomizationData = async () => {
+    if (!currentUser) return;
+    
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      const updateData = {
+        portfolioTitle,
+        portfolioDesc,
+        colorTheme,
+        skills,
+        awards,
+        updatedAt: new Date()
+      };
+      
+      // Update existing document or create new one
+      await setDoc(userRef, updateData, { merge: true });
+      console.log('Portfolio customization saved successfully');
+    } catch (error) {
+      console.error('Error saving portfolio customization:', error);
+    }
   };
 
   const handleTemplateChange = (e) => setTemplate(e.target.value);
@@ -238,7 +269,11 @@ export default function PortfolioBuilder() {
     { id: 4, name: 'ดูตัวอย่าง', icon: Eye, desc: 'ตรวจสอบและดาวน์โหลด' }
   ];
 
-  const nextStep = () => {
+  const nextStep = async () => {
+    if (currentStep === 2) {
+      // Save customization data before moving to next step
+      await saveCustomizationData();
+    }
     if (currentStep < 4) setCurrentStep(currentStep + 1);
   };
 
@@ -412,7 +447,7 @@ export default function PortfolioBuilder() {
                         onChange={e => setSkillInput(e.target.value)}
                         className="flex-1 px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="เพิ่มทักษะ..."
-                        onKeyPress={e => {
+                        onKeyDown={e => {
                           if (e.key === 'Enter' && skillInput.trim()) {
                             setSkills([...skills, skillInput.trim()]);
                             setSkillInput('');
@@ -461,7 +496,7 @@ export default function PortfolioBuilder() {
                         onChange={e => setAwardInput(e.target.value)}
                         className="flex-1 px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="เพิ่มรางวัล..."
-                        onKeyPress={e => {
+                        onKeyDown={e => {
                           if (e.key === 'Enter' && awardInput.trim()) {
                             setAwards([...awards, awardInput.trim()]);
                             setAwardInput('');
@@ -501,6 +536,17 @@ export default function PortfolioBuilder() {
                     </div>
                   </div>
                 </div>
+              </div>
+              
+              {/* Save Button */}
+              <div className="mt-8 flex justify-center">
+                <button
+                  onClick={saveCustomizationData}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors"
+                >
+                  <Settings className="h-4 w-4" />
+                  บันทึกการตั้งค่า
+                </button>
               </div>
             </div>
           )}

@@ -1,8 +1,8 @@
 // src/components/UserProfile.js
 import React, { useEffect, useState } from "react";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, serverTimestamp, collection, query, where, getDocs } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
-import { User, Upload, Camera, Save, Eye, EyeOff, Phone, School, Target, Calendar, Sparkles, CheckCircle } from "lucide-react";
+import { User, Upload, Camera, Save, Eye, EyeOff, Phone, Sparkles, CheckCircle, Calendar } from "lucide-react";
 
 import { uploadToCloudinary, createPreviewUrl } from "../utils/cloudinary";
 
@@ -15,17 +15,20 @@ export default function UserProfile() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [form, setForm] = useState({
     displayName: "",
+    name: "", // เพิ่ม field name จาก collection users
+    username: "", // เพิ่ม field username
+    program: "", // เพิ่ม field program
     email: "",
-    school: "",
-    facultyTarget: "",
-    year: "ปีการศึกษา 2568",
     phone: "",
-    bio: "",
+    dateOfBirth: "",
+    address: "",
     skills: "", // กรอกคอมม่า: JS, React, PS
     photoURL: "",
     role: "user",
     visibility: "private",
   });
+  
+  const [userDocId, setUserDocId] = useState(null); // เก็บ document ID ของผู้ใช้
 
   // โหลดหรือสร้างเอกสารโปรไฟล์
   useEffect(() => {
@@ -33,35 +36,80 @@ export default function UserProfile() {
     if (!user) return;
     (async () => {
       setFetching(true);
-      const ref = doc(db, "users", user.uid);
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
-        const data = snap.data();
-        setForm((f) => ({
-          ...f,
-          displayName: data.displayName ?? user.displayName ?? "",
-          email: data.email ?? user.email ?? "",
-          school: data.school ?? "",
-          facultyTarget: data.facultyTarget ?? "",
-          year: data.year ?? "ปีการศึกษา 2568",
-          phone: data.phone ?? "",
-          bio: data.bio ?? "",
-          skills: Array.isArray(data.skills) ? data.skills.join(", ") : (data.skills ?? ""),
-          photoURL: data.photoURL ?? user.photoURL ?? "",
-          role: data.role ?? "user",
-          visibility: data.visibility ?? "private",
-        }));
-      } else {
-        const seed = {
-          displayName: user.displayName ?? "",
-          email: user.email ?? "",
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          role: "user",
-          visibility: "private",
-        };
-        await setDoc(ref, seed, { merge: true });
-        setForm((f) => ({ ...f, ...seed }));
+      try {
+        // ค้นหาข้อมูลผู้ใช้จาก collection "users" โดยใช้ uid
+        const usersQuery = query(
+          collection(db, "users"),
+          where("uid", "==", user.uid)
+        );
+        const querySnapshot = await getDocs(usersQuery);
+        
+        if (!querySnapshot.empty) {
+          // ถ้าเจอข้อมูลใน collection users
+          const userDoc = querySnapshot.docs[0];
+          const data = userDoc.data();
+          setUserDocId(userDoc.id); // เก็บ document ID
+          
+          console.log("ข้อมูลผู้ใช้จาก collection users:", data);
+          
+          setForm((f) => ({
+            ...f,
+            displayName: data.name || data.displayName || user.displayName || "",
+            name: data.name || "",
+            username: data.username || "",
+            program: data.program || "",
+            email: data.email || user.email || "",
+            phone: data.phone || "",
+            dateOfBirth: data.dateOfBirth || data.dob || "",
+            address: data.address || data.bio || "",
+            skills: Array.isArray(data.skills) ? data.skills.join(", ") : (data.skills || ""),
+            photoURL: data.photoURL || user.photoURL || "",
+            role: data.access_level || data.role || "user",
+            visibility: data.visibility || "private",
+          }));
+        } else {
+          // ถ้าไม่เจอ ให้ลองหาใน collection users เดิม (fallback)
+          console.log("ไม่พบข้อมูลใน collection users, ลองหา users collection เดิม");
+          const ref = doc(db, "users", user.uid);
+          const snap = await getDoc(ref);
+          
+          if (snap.exists()) {
+            const data = snap.data();
+            setUserDocId(user.uid); // ใช้ uid เป็น document ID
+            setForm((f) => ({
+              ...f,
+              displayName: data.displayName || user.displayName || "",
+              name: data.name || "",
+              username: data.username || "",
+              program: data.program || "",
+              email: data.email || user.email || "",
+              phone: data.phone || "",
+              dateOfBirth: data.dateOfBirth || data.dob || "",
+              address: data.address || data.bio || "",
+              skills: Array.isArray(data.skills) ? data.skills.join(", ") : (data.skills || ""),
+              photoURL: data.photoURL || user.photoURL || "",
+              role: data.role || "user",
+              visibility: data.visibility || "private",
+            }));
+          } else {
+            // สร้างเอกสารใหม่
+            console.log("สร้างเอกสารผู้ใช้ใหม่");
+            const ref = doc(db, "users", user.uid);
+            const seed = {
+              displayName: user.displayName || "",
+              email: user.email || "",
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+              role: "user",
+              visibility: "private",
+            };
+            await setDoc(ref, seed, { merge: true });
+            setForm((f) => ({ ...f, ...seed }));
+            setUserDocId(user.uid);
+          }
+        }
+      } catch (error) {
+        console.error("Error loading user profile:", error);
       }
       setFetching(false);
     })();
@@ -108,7 +156,12 @@ export default function UserProfile() {
   const onSave = async () => {
     setSaving(true);
     try {
-      const ref = doc(db, "users", user.uid);
+      if (!userDocId) {
+        console.error("ไม่พบ document ID ของผู้ใช้");
+        return;
+      }
+
+      const ref = doc(db, "users", userDocId);
       const payload = {
         ...form,
         skills: form.skills
@@ -116,22 +169,31 @@ export default function UserProfile() {
           : [],
         updatedAt: serverTimestamp(),
       };
+      
+      console.log("บันทึกข้อมูลผู้ใช้:", payload);
       await updateDoc(ref, payload);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
+      console.error("Error updating profile:", err);
       // ถ้าเอกสารยังไม่มี (กรณีพิเศษ) ใช้ setDoc
-      const ref = doc(db, "users", user.uid);
-      await setDoc(ref, {
-        ...form,
-        skills: form.skills
-          ? form.skills.split(",").map((s) => s.trim()).filter(Boolean)
-          : [],
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+      try {
+        const ref = doc(db, "users", userDocId || user.uid);
+        await setDoc(ref, {
+          ...form,
+          uid: user.uid, // เพิ่ม uid field
+          skills: form.skills
+            ? form.skills.split(",").map((s) => s.trim()).filter(Boolean)
+            : [],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } catch (setErr) {
+        console.error("Error creating profile:", setErr);
+        alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+      }
     } finally {
       setSaving(false);
     }
@@ -185,8 +247,11 @@ export default function UserProfile() {
                 </div>
                 
                 <div className="mt-4">
-                  <h3 className="text-lg font-semibold text-gray-900">{form.displayName || 'ชื่อของคุณ'}</h3>
+                  <h3 className="text-lg font-semibold text-gray-900">{form.name || form.displayName || 'ชื่อของคุณ'}</h3>
                   <p className="text-gray-500">{form.email}</p>
+                  {form.program && (
+                    <p className="text-sm text-gray-500 mt-1">แผนการเรียน: {form.program}</p>
+                  )}
                   <div className="mt-2 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
                     <Sparkles className="w-3 h-3 mr-1" />
                     {form.role === 'admin' ? 'ผู้ดูแลระบบ' : 'นักเรียน'}
@@ -229,12 +294,40 @@ export default function UserProfile() {
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">ชื่อ-นามสกุล</label>
                   <input 
-                    name="displayName" 
-                    value={form.displayName} 
+                    name="name" 
+                    value={form.name} 
                     onChange={onChange}
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                     placeholder="กรอกชื่อ-นามสกุลของคุณ"
                   />
+                  <p className="mt-1 text-xs text-gray-500">ข้อมูลจาก collection users</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">ชื่อผู้ใช้</label>
+                  <input 
+                    name="username" 
+                    value={form.username} 
+                    onChange={onChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    placeholder="ชื่อผู้ใช้"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">แผนการเรียน</label>
+                  <select 
+                    name="program" 
+                    value={form.program} 
+                    onChange={onChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  >
+                    <option value="">เลือกแผนการเรียน</option>
+                    <option value="วิทย์-คณิต">วิทย์-คณิต</option>
+                    <option value="ศิลป์-ภาษา">ศิลป์-ภาษา</option>
+                    <option value="ศิลป์-คำนวณ">ศิลป์-คำนวณ</option>
+                    <option value="อื่นๆ">อื่นๆ</option>
+                  </select>
                 </div>
 
                 <div>
@@ -265,73 +358,34 @@ export default function UserProfile() {
                   </div>
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">วันเดือนปีเกิด</label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input 
+                      name="dateOfBirth" 
+                      type="date"
+                      value={form.dateOfBirth} 
+                      onChange={onChange}
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    />
+                  </div>
+                </div>
+
                 <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">คำอธิบายตัวเอง</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">ที่อยู่ปัจจุบัน</label>
                   <textarea 
-                    name="bio" 
+                    name="address" 
                     rows={4} 
-                    value={form.bio} 
+                    value={form.address} 
                     onChange={onChange}
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-none"
-                    placeholder="เขียนเกี่ยวกับตัวคุณสั้น ๆ..."
+                    placeholder="กรอกที่อยู่ปัจจุบันของคุณ..."
                   />
                 </div>
               </div>
             </div>
 
-            {/* Education Information */}
-            <div className="bg-white rounded-2xl shadow-lg ring-1 ring-gray-200/50 p-6 sm:p-8">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="rounded-lg bg-emerald-50 p-2">
-                  <School className="h-5 w-5 text-emerald-600" />
-                </div>
-                <h2 className="text-xl font-semibold text-gray-900">ข้อมูลการศึกษา</h2>
-              </div>
-
-              <div className="grid gap-6 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">โรงเรียน/สถาบัน</label>
-                  <div className="relative">
-                    <School className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <input 
-                      name="school" 
-                      value={form.school} 
-                      onChange={onChange}
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                      placeholder="ชื่อโรงเรียน/มหาวิทยาลัย"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">ปีการศึกษา</label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <input 
-                      name="year" 
-                      value={form.year} 
-                      onChange={onChange}
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                      placeholder="ปีการศึกษา 2568"
-                    />
-                  </div>
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">คณะ/สาขาที่ต้องการ</label>
-                  <div className="relative">
-                    <Target className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <input 
-                      name="facultyTarget" 
-                      value={form.facultyTarget} 
-                      onChange={onChange}
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                      placeholder="คณะหรือสาขาที่สนใจ"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
 
             {/* Skills */}
             <div className="bg-white rounded-2xl shadow-lg ring-1 ring-gray-200/50 p-6 sm:p-8">

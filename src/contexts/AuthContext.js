@@ -1,6 +1,6 @@
 // src/contexts/AuthContext.js
 import { createContext, useContext, useEffect, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../firebase";
 
 const AuthContext = createContext(null);
@@ -13,7 +13,15 @@ export function AuthProvider({ children }) {
     return () => unsub();
   }, []);
 
-  const value = { user, loading: user === undefined };
+  const signup = (email, password) => {
+    return createUserWithEmailAndPassword(auth, email, password);
+  };
+
+  const value = { 
+    user, 
+    loading: user === undefined, 
+    signup 
+  };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
