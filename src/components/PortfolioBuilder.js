@@ -7,16 +7,12 @@ export default function PortfolioBuilder() {
   const [profile, setProfile] = useState(null);
   const [educations, setEducations] = useState([]);
   const [works, setWorks] = useState([]);
-  const [selectedWorks, setSelectedWorks] = useState([]);
   const [template, setTemplate] = useState('default');
   const [previewMode, setPreviewMode] = useState(false);
   const [portfolioTitle, setPortfolioTitle] = useState('Portfolio ของฉัน');
   const [portfolioDesc, setPortfolioDesc] = useState('รวมผลงานและประวัติการศึกษาของฉัน');
   const [colorTheme, setColorTheme] = useState('#2563eb');
   const [skills, setSkills] = useState([]);
-  const [skillInput, setSkillInput] = useState('');
-  const [awards, setAwards] = useState([]);
-  const [awardInput, setAwardInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [currentStep, setCurrentStep] = useState(1);
   const { user: currentUser } = useAuth();
@@ -38,8 +34,16 @@ export default function PortfolioBuilder() {
           if (profileData.portfolioTitle) setPortfolioTitle(profileData.portfolioTitle);
           if (profileData.portfolioDesc) setPortfolioDesc(profileData.portfolioDesc);
           if (profileData.colorTheme) setColorTheme(profileData.colorTheme);
-          if (profileData.skills && Array.isArray(profileData.skills)) setSkills(profileData.skills);
-          if (profileData.awards && Array.isArray(profileData.awards)) setAwards(profileData.awards);
+          
+          // ดึงทักษะจาก profile data (ส่วนทักษะและความสามารถจากหน้า UserProfile)
+          if (profileData.skills && Array.isArray(profileData.skills)) {
+            setSkills(profileData.skills);
+          } else if (profileData.portfolioSkills && Array.isArray(profileData.portfolioSkills)) {
+            // fallback กรณีที่มีการเก็บทักษะแยกสำหรับ portfolio
+            setSkills(profileData.portfolioSkills);
+          }
+          
+          // awards จะดึงมาจาก works collection แทน
         }
 
         // Fetch education
@@ -68,11 +72,6 @@ export default function PortfolioBuilder() {
     fetchData();
   }, [currentUser, db]);
 
-  const toggleSelect = (id) => {
-    setSelectedWorks(selectedWorks.includes(id)
-      ? selectedWorks.filter(wid => wid !== id)
-      : [...selectedWorks, id]);
-  };
 
   // Save customization data to Firebase
   const saveCustomizationData = async () => {
@@ -84,8 +83,7 @@ export default function PortfolioBuilder() {
         portfolioTitle,
         portfolioDesc,
         colorTheme,
-        skills,
-        awards,
+        portfolioSkills: skills, // เก็บทักษะ portfolio แยกจากทักษะหลัก
         updatedAt: new Date()
       };
       
@@ -111,87 +109,180 @@ export default function PortfolioBuilder() {
     URL.revokeObjectURL(url);
   };
 
-  const displayWorks = selectedWorks.length > 0
-    ? works.filter(w => selectedWorks.includes(w.id))
-    : works;
+  const displayWorks = works;
 
   const renderPortfolio = () => (
-    <div id="portfolio-preview" className={template === 'modern' ? 'bg-gradient-to-br from-pink-100 to-blue-100 p-8 rounded-xl' : ''}>
-      <div className="mb-6 text-center">
-        <h2 className="text-3xl font-bold" style={{ color: colorTheme }}>{portfolioTitle}</h2>
-        <div className="text-gray-600 mt-2">{portfolioDesc}</div>
-      </div>
-      <div className="flex flex-col md:flex-row items-center gap-6 mb-8">
-        {profile?.photoURL && (
-          <img src={profile.photoURL} alt="profile" className="w-28 h-28 rounded-full object-cover border-4" style={{ borderColor: colorTheme }} />
-        )}
-        <div>
-          <div className="text-2xl font-bold" style={{ color: colorTheme }}>{profile?.fullName || 'ชื่อ-นามสกุล'}</div>
-          <div className="text-gray-600">{profile?.email}</div>
-          {profile?.phone && <div className="text-gray-500 text-sm">โทร: {profile.phone}</div>}
-          {profile?.dob && <div className="text-gray-500 text-sm">วันเกิด: {profile.dob}</div>}
-          {profile?.address && <div className="text-gray-500 text-sm">ที่อยู่: {profile.address}</div>}
-          {profile?.goal && <div className="text-gray-500 text-sm mt-2">เป้าหมาย: {profile.goal}</div>}
-        </div>
-      </div>
-      {skills.length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-xl font-semibold" style={{ color: colorTheme }}>ทักษะ</h3>
-          <ul className="flex flex-wrap gap-2 mt-2">
-            {skills.map((skill, idx) => (
-              <li key={idx} className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm">{skill}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {awards.length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-xl font-semibold" style={{ color: colorTheme }}>รางวัล/ความสำเร็จ</h3>
-          <ul className="list-disc ml-6 mt-2 space-y-1">
-            {awards.map((award, idx) => (
-              <li key={idx} className="text-blue-700">{award}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <div className="mb-8">
-        <h3 className="text-xl font-semibold" style={{ color: colorTheme }}>ประวัติการศึกษา</h3>
-        {educations.length === 0 ? (
-          <div className="text-gray-400">ไม่มีข้อมูลการศึกษา</div>
-        ) : (
-          <ul className="space-y-2">
-            {educations.map(edu => (
-              <li key={edu.id} className="bg-white rounded shadow p-3 flex flex-col md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="font-bold" style={{ color: colorTheme }}>{edu.degree}</div>
-                  <div className="text-gray-600 text-sm">เกรดเฉลี่ย: {edu.gpa}</div>
-                  <div className="text-gray-500 text-xs">ช่วงเวลา: {edu.period}</div>
-                </div>
-                <div className="text-gray-400 text-xs mt-2 md:mt-0">ID: {edu.education_id}</div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      <div>
-        <h3 className="text-xl font-semibold" style={{ color: colorTheme }}>ผลงาน</h3>
-        {displayWorks.length === 0 ? (
-          <div className="text-gray-400">ไม่มีผลงานที่เลือก</div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {displayWorks.map(work => (
-              <div key={work.id} className={template === 'modern' ? 'bg-white rounded-xl shadow p-4 border-l-4' : 'bg-white rounded shadow p-4'} style={template === 'modern' ? { borderColor: colorTheme, borderLeftWidth: 6 } : {}}>
-                <div className="font-bold text-lg" style={{ color: colorTheme }}>{work.title}</div>
-                <div className="text-gray-600 text-sm mb-2">หมวดหมู่: {work.category}</div>
-                <div className="text-gray-500 text-xs mb-2">{work.description}</div>
-                {work.file_path && (
-                  <a href={work.file_path} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">ดูไฟล์/รูป</a>
+    <div id="portfolio-preview" className="bg-white">
+      {/* Header Section */}
+      <div className="relative overflow-hidden" style={{ backgroundColor: colorTheme }}>
+        <div className="absolute inset-0 bg-black/10"></div>
+        <div className="relative px-8 py-12">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex flex-col md:flex-row items-center gap-8">
+              {/* Profile Photo */}
+              <div className="flex-shrink-0">
+                {profile?.photoURL ? (
+                  <img 
+                    src={profile.photoURL} 
+                    alt="profile" 
+                    className="w-32 h-32 rounded-full object-cover border-4 border-white shadow-xl" 
+                  />
+                ) : (
+                  <div className="w-32 h-32 rounded-full bg-white/20 border-4 border-white flex items-center justify-center">
+                    <User className="h-16 w-16 text-white" />
+                  </div>
                 )}
-                <div className="text-gray-400 text-xs mt-2">วันที่อัปโหลด: {work.uploaded_at?.toDate?.().toLocaleString?.() || ''}</div>
               </div>
-            ))}
+              
+              {/* Personal Info */}
+              <div className="text-center md:text-left text-white">
+                <h1 className="text-4xl font-bold mb-2">{profile?.name || profile?.fullName || 'ชื่อ-นามสกุล'}</h1>
+                <p className="text-xl mb-4 text-white/90">{portfolioTitle}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-white/80">
+                  <div>📧 {profile?.email}</div>
+                  {profile?.phone && <div>📞 {profile.phone}</div>}
+                  {profile?.address && <div>📍 {profile.address}</div>}
+                  {profile?.dateOfBirth && <div>🎂 {profile.dateOfBirth}</div>}
+                </div>
+              </div>
+            </div>
           </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="max-w-4xl mx-auto px-8 py-8">
+        {/* About Section */}
+        {portfolioDesc && (
+          <section className="mb-8">
+            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2" style={{ color: colorTheme }}>
+              <User className="h-6 w-6" />
+              เกี่ยวกับฉัน
+            </h2>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-gray-700 leading-relaxed">{portfolioDesc}</p>
+            </div>
+          </section>
         )}
+
+        {/* Skills Section */}
+        {skills.length > 0 && (
+          <section className="mb-8">
+            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2" style={{ color: colorTheme }}>
+              <Sparkles className="h-6 w-6" />
+              ทักษะและความสามารถ
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {skills.map((skill, idx) => (
+                <div key={idx} className="bg-gray-50 rounded-lg px-4 py-3 text-center border-l-4" style={{ borderColor: colorTheme }}>
+                  <span className="font-medium text-gray-800">{skill}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Education Section */}
+        {educations.length > 0 && (
+          <section className="mb-8">
+            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2" style={{ color: colorTheme }}>
+              <GraduationCap className="h-6 w-6" />
+              ประวัติการศึกษา
+            </h2>
+            <div className="space-y-4">
+              {educations.map(edu => (
+                <div key={edu.id} className="bg-gray-50 rounded-lg p-6 border-l-4" style={{ borderColor: colorTheme }}>
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-800">{edu.degree}</h3>
+                      <p className="text-gray-600 mt-1">เกรดเฉลี่ย: {edu.gpa}</p>
+                      <p className="text-gray-500 text-sm mt-1">ระยะเวลา: {edu.period}</p>
+                    </div>
+                    <div className="mt-2 md:mt-0">
+                      <span className="inline-block px-3 py-1 bg-white rounded-full text-xs text-gray-500">
+                        ID: {edu.education_id}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Awards Section */}
+        {works.length > 0 && (
+          <section className="mb-8">
+            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2" style={{ color: colorTheme }}>
+              <Award className="h-6 w-6" />
+              รางวัลและความสำเร็จ
+            </h2>
+            <div className="space-y-4">
+              {works.map((work, idx) => (
+                <div key={idx} className="bg-gray-50 rounded-lg p-6 border-l-4" style={{ borderColor: colorTheme }}>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2">{work.title}</h3>
+                  {work.description && (
+                    <p className="text-gray-600 mb-2">{work.description}</p>
+                  )}
+                  <div className="flex flex-wrap gap-2 text-sm text-gray-500">
+                    <span className="bg-white px-2 py-1 rounded">หมวดหมู่: {work.category}</span>
+                    {work.uploaded_at && (
+                      <span className="bg-white px-2 py-1 rounded">
+                        วันที่: {work.uploaded_at?.toDate?.().toLocaleDateString?.('th-TH') || ''}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Works Portfolio Section */}
+        {displayWorks.length > 0 && (
+          <section className="mb-8">
+            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2" style={{ color: colorTheme }}>
+              <Briefcase className="h-6 w-6" />
+              ผลงานและโครงการ
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {displayWorks.map(work => (
+                <div key={work.id} className="bg-gray-50 rounded-lg overflow-hidden border-l-4" style={{ borderColor: colorTheme }}>
+                  <div className="p-6">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-2">{work.title}</h3>
+                    <p className="text-gray-600 text-sm mb-3">{work.description}</p>
+                    
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      <span className="bg-white px-3 py-1 rounded-full text-xs font-medium" style={{ color: colorTheme }}>
+                        {work.category}
+                      </span>
+                    </div>
+                    
+                    {work.file_path && (
+                      <a 
+                        href={work.file_path} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg hover:opacity-90 transition-opacity"
+                        style={{ backgroundColor: colorTheme }}
+                      >
+                        <Eye className="h-4 w-4" />
+                        ดูผลงาน
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="bg-gray-100 px-8 py-6">
+        <div className="max-w-4xl mx-auto text-center text-gray-500 text-sm">
+          <p>Portfolio สร้างเมื่อ {new Date().toLocaleDateString('th-TH')}</p>
+        </div>
       </div>
     </div>
   );
@@ -265,8 +356,7 @@ export default function PortfolioBuilder() {
   const steps = [
     { id: 1, name: 'เลือกเทมเพลต', icon: Palette, desc: 'เลือกรูปแบบ Portfolio' },
     { id: 2, name: 'ปรับแต่งข้อมูล', icon: Settings, desc: 'กำหนดชื่อ สี และข้อมูลเพิ่มเติม' },
-    { id: 3, name: 'เลือกผลงาน', icon: Briefcase, desc: 'เลือกผลงานที่จะแสดง' },
-    { id: 4, name: 'ดูตัวอย่าง', icon: Eye, desc: 'ตรวจสอบและดาวน์โหลด' }
+    { id: 3, name: 'ดูตัวอย่าง', icon: Eye, desc: 'ตรวจสอบและดาวน์โหลด' }
   ];
 
   const nextStep = async () => {
@@ -274,7 +364,7 @@ export default function PortfolioBuilder() {
       // Save customization data before moving to next step
       await saveCustomizationData();
     }
-    if (currentStep < 4) setCurrentStep(currentStep + 1);
+    if (currentStep < 3) setCurrentStep(currentStep + 1);
   };
 
   const prevStep = () => {
@@ -440,192 +530,59 @@ export default function PortfolioBuilder() {
                 <div className="space-y-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">ทักษะ</label>
-                    <div className="flex gap-2 mb-3">
-                      <input
-                        type="text"
-                        value={skillInput}
-                        onChange={e => setSkillInput(e.target.value)}
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="เพิ่มทักษะ..."
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && skillInput.trim()) {
-                            setSkills([...skills, skillInput.trim()]);
-                            setSkillInput('');
-                          }
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (skillInput.trim()) {
-                            setSkills([...skills, skillInput.trim()]);
-                            setSkillInput('');
-                          }
-                        }}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 flex items-center gap-1"
-                      >
-                        <Plus className="h-4 w-4" />
-                        เพิ่ม
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {skills.map((skill, idx) => (
-                        <span
-                          key={idx}
-                          className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm"
-                        >
-                          {skill}
-                          <button
-                            type="button"
-                            onClick={() => setSkills(skills.filter((_, i) => i !== idx))}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </span>
-                      ))}
+                    <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 min-h-[80px]">
+                      {skills.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {skills.map((skill, idx) => (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium"
+                            >
+                              {skill}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-4 text-gray-500">
+                          <p className="text-sm">ไม่มีข้อมูลทักษะ</p>
+                          <p className="text-xs">กรุณาเพิ่มทักษะในหน้าโปรไฟล์ก่อน</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">รางวัล/ความสำเร็จ</label>
-                    <div className="flex gap-2 mb-3">
-                      <input
-                        type="text"
-                        value={awardInput}
-                        onChange={e => setAwardInput(e.target.value)}
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="เพิ่มรางวัล..."
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && awardInput.trim()) {
-                            setAwards([...awards, awardInput.trim()]);
-                            setAwardInput('');
-                          }
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (awardInput.trim()) {
-                            setAwards([...awards, awardInput.trim()]);
-                            setAwardInput('');
-                          }
-                        }}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 flex items-center gap-1"
-                      >
-                        <Plus className="h-4 w-4" />
-                        เพิ่ม
-                      </button>
-                    </div>
-                    <div className="space-y-2">
-                      {awards.map((award, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
-                        >
-                          <span className="text-sm">{award}</span>
-                          <button
-                            type="button"
-                            onClick={() => setAwards(awards.filter((_, i) => i !== idx))}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
+                    <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 min-h-[80px]">
+                      {works.length > 0 ? (
+                        <div className="space-y-3">
+                          {works.map((work, idx) => (
+                            <div key={idx} className="p-3 bg-white rounded-lg border border-gray-200">
+                              <h4 className="font-medium text-gray-900 text-sm">{work.title}</h4>
+                              {work.description && (
+                                <p className="text-xs text-gray-600 mt-1">{work.description}</p>
+                              )}
+                              <div className="text-xs text-gray-400 mt-2">
+                                หมวดหมู่: {work.category}
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      ) : (
+                        <div className="text-center py-4 text-gray-500">
+                          <p className="text-sm">ไม่มีข้อมูลผลงาน</p>
+                          <p className="text-xs">กรุณาเพิ่มผลงานก่อน</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
-              
-              {/* Save Button */}
-              <div className="mt-8 flex justify-center">
-                <button
-                  onClick={saveCustomizationData}
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors"
-                >
-                  <Settings className="h-4 w-4" />
-                  บันทึกการตั้งค่า
-                </button>
-              </div>
             </div>
           )}
 
-          {/* Step 3: Work Selection */}
+          {/* Step 3: Preview */}
           {currentStep === 3 && (
-            <div className="p-8">
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-gray-900 mb-2 flex items-center gap-2">
-                  <Briefcase className="h-6 w-6 text-purple-600" />
-                  เลือกผลงาน
-                </h2>
-                <p className="text-gray-600">เลือกผลงานที่คุณต้องการแสดงใน Portfolio</p>
-              </div>
-
-              {works.length === 0 ? (
-                <div className="text-center py-12">
-                  <Briefcase className="mx-auto h-16 w-16 text-gray-400 mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">ยังไม่มีผลงาน</h3>
-                  <p className="text-gray-500 mb-4">กรุณาเพิ่มผลงานก่อนสร้าง Portfolio</p>
-                  <button
-                    onClick={() => window.location.href = '/dashboard/works'}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700"
-                  >
-                    <Plus className="h-4 w-4" />
-                    เพิ่มผลงาน
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="text-sm text-gray-600">
-                      เลือก {selectedWorks.length} จาก {works.length} ผลงาน
-                    </div>
-                    <button
-                      onClick={() => setSelectedWorks(selectedWorks.length === works.length ? [] : works.map(w => w.id))}
-                      className="text-sm text-blue-600 hover:text-blue-700"
-                    >
-                      {selectedWorks.length === works.length ? 'ยกเลิกการเลือกทั้งหมด' : 'เลือกทั้งหมด'}
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {works.map(work => (
-                      <div
-                        key={work.id}
-                        onClick={() => toggleSelect(work.id)}
-                        className={`cursor-pointer p-4 rounded-xl border-2 transition-all duration-200 ${
-                          selectedWorks.includes(work.id)
-                            ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100'
-                            : 'border-gray-200 hover:border-gray-300 bg-white'
-                        }`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="flex-shrink-0 mt-1">
-                            {selectedWorks.includes(work.id) ? (
-                              <CheckSquare className="h-5 w-5 text-blue-600" />
-                            ) : (
-                              <Square className="h-5 w-5 text-gray-400" />
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-medium text-gray-900 mb-1">{work.title}</h3>
-                            <p className="text-sm text-gray-600 mb-2">{work.category}</p>
-                            {work.description && (
-                              <p className="text-xs text-gray-500 line-clamp-2">{work.description}</p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Step 4: Preview */}
-          {currentStep === 4 && (
             <div className="p-8">
               <div className="mb-6">
                 <h2 className="text-2xl font-bold text-gray-900 mb-2 flex items-center gap-2">
@@ -636,6 +593,13 @@ export default function PortfolioBuilder() {
               </div>
 
               <div className="flex items-center justify-center gap-4 mb-8">
+                <button
+                  onClick={saveCustomizationData}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors"
+                >
+                  <Settings className="h-4 w-4" />
+                  บันทึกการตั้งค่า
+                </button>
                 <button
                   onClick={handlePreview}
                   className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl"
@@ -666,7 +630,7 @@ export default function PortfolioBuilder() {
                   </div>
                   <div className="text-sm text-gray-600">
                     <div>ทักษะ: {skills.length} รายการ</div>
-                    <div>รางวัล: {awards.length} รายการ</div>
+                    <div>รางวัล: {works.length} รายการ</div>
                   </div>
                 </div>
 
@@ -676,8 +640,7 @@ export default function PortfolioBuilder() {
                     <h3 className="font-medium text-gray-900">ผลงาน</h3>
                   </div>
                   <div className="text-sm text-gray-600">
-                    <div>เลือก: {selectedWorks.length} ผลงาน</div>
-                    <div>ทั้งหมด: {works.length} ผลงาน</div>
+                    <div>ผลงานทั้งหมด: {works.length} รายการ</div>
                   </div>
                 </div>
               </div>
@@ -706,7 +669,7 @@ export default function PortfolioBuilder() {
               ))}
             </div>
 
-            {currentStep < 4 ? (
+            {currentStep < 3 ? (
               <button
                 onClick={nextStep}
                 className="inline-flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700"
