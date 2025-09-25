@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { db } from "../firebase";
-import { collection, getDocs, query, where, orderBy, limit } from "firebase/firestore";
+import { collection, getDocs, query, where, doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 
 // เปลี่ยน 'ชั้น/ห้อง' เป็นฟิลด์กำหนดเองได้ที่นี่
 const SECONDARY_FIELD = { key: "program", label: "แผนการเรียน" };
@@ -111,11 +111,9 @@ const DEMO = {
     { work_id: "W002", user_id: "U002", title: "เว็บไซต์โรงเรียน", category: "โครงการ/ชิ้นงาน", year: 2025, award: "-", status: "pending" },
   ],
   templates: [
-    { template_id: "default", name: "Default", layout: "A4 Clean", category: "ทั่วไป", is_active: true, accent: "#4f46e5", preview: "D" },
-    { template_id: "classic", name: "Classic", layout: "A4 Classic", category: "ทั่วไป", is_active: true, accent: "#0ea5e9", preview: "C" },
-    { template_id: "modern", name: "Modern", layout: "A4 Modern", category: "ทั่วไป", is_active: true, accent: "#16a34a", preview: "M" },
+    { template_id: "classic", name: "Classic CV", layout: "A4 Classic", category: "ทั่วไป", is_active: true, accent: "#2563eb", preview: "C" },
+    { template_id: "modern", name: "Modern Gradient", layout: "A4 Modern", category: "ทั่วไป", is_active: true, accent: "#16a34a", preview: "M" },
     { template_id: "timeline", name: "Timeline", layout: "A4 Timeline", category: "กิจกรรม/ผลงาน", is_active: true, accent: "#f59e0b", preview: "T" },
-    { template_id: "minimal", name: "Minimal", layout: "A4 Minimal", category: "ทั่วไป", is_active: false, accent: "#64748b", preview: "Min" },
   ],
   categories: [
     { id: "C01", name: "รางวัล/แข่งขัน" },
@@ -128,14 +126,20 @@ export default function AdminDashboard() {
   const [tab, setTab] = useState("dashboard");
   const [q, setQ] = useState("");
   const [stats, setStats] = useState({ students: 0, portfolios: 0, pending: 0, templates: 0 });
-  const [subs, setSubs] = useState(DEMO.submissions);
-  const [users, setUsers] = useState(DEMO.users);
+  const [subs, setSubs] = useState([]);
+  const [users, setUsers] = useState([]);
   const [educations] = useState(DEMO.educations);
   const [works] = useState(DEMO.works);
-  const [templates, setTemplates] = useState(DEMO.templates);
+  const [templates, setTemplates] = useState([]);
   const [categories, setCategories] = useState(DEMO.categories);
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [selectedTemplateType, setSelectedTemplateType] = useState('');
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingUserId, setDeletingUserId] = useState(null);
 
   // ฟังก์ชันดึงข้อมูลสถิติจาก Firestore
   const fetchStats = async () => {
@@ -215,9 +219,89 @@ export default function AdminDashboard() {
     }
   };
 
+  // ฟังก์ชันดึงข้อมูล templates จาก Firestore
+  const fetchTemplates = async () => {
+    try {
+      const templatesSnapshot = await getDocs(collection(db, "TEMPLATES"));
+      const templatesData = [];
+      
+      templatesSnapshot.forEach((doc) => {
+        const data = doc.data();
+        templatesData.push({
+          template_id: doc.id,
+          id: doc.id, // เพิ่ม id สำหรับ compatibility
+          name: data.name || "",
+          type: data.type || "classic",
+          desc: data.desc || "",
+          color: data.color || "#2563eb",
+          accent: data.accent || data.color || "#2563eb",
+          category: data.category || "ทั่วไป",
+          layout: data.layout || "A4",
+          preview: data.preview || data.name?.charAt(0) || "?",
+          is_active: data.is_active !== undefined ? data.is_active : true,
+          isPublished: data.isPublished !== undefined ? data.isPublished : true,
+          sections: data.sections || {},
+          layout_settings: data.layout_settings || {},
+          created_at: data.createdAt?.toDate ? data.createdAt.toDate().toLocaleDateString('th-TH') : "",
+          updated_at: data.updatedAt?.toDate ? data.updatedAt.toDate().toLocaleDateString('th-TH') : "",
+        });
+      });
+
+      console.log('Fetched templates from Firebase:', templatesData);
+      setTemplates(templatesData);
+    } catch (error) {
+      console.error("Error fetching templates:", error);
+      // ใช้ข้อมูล demo หากเกิดข้อผิดพลาด
+      setTemplates(DEMO.templates);
+    }
+  };
+
+  // ฟังก์ชันดึงข้อมูลคำขออนุมัติ (submissions)
+  const fetchSubmissions = async () => {
+    try {
+      // ดึงข้อมูล users ที่มี profile submissions
+      const usersSnapshot = await getDocs(collection(db, "users"));
+      const submissions = [];
+      
+      for (const userDoc of usersSnapshot.docs) {
+        const userData = userDoc.data();
+        
+        // ค้นหา profile status ของผู้ใช้แต่ละคน
+        // สมมติว่ามี field submission_status หรือ portfolio_status ในข้อมูล user
+        if (userData.visibility && userData.visibility !== 'private') {
+          const submissionData = {
+            id: `P-${userDoc.id.slice(-3).toUpperCase()}`, // สร้าง ID จาก user document
+            name: userData.name || userData.displayName || 'ไม่ระบุชื่อ',
+            [SECONDARY_FIELD.key]: userData.program || userData[SECONDARY_FIELD.key] || '-',
+            updatedAt: userData.updatedAt ? 
+              new Date(userData.updatedAt.seconds * 1000).toLocaleDateString('th-TH', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric'
+              }) : 'ไม่ทราบ',
+            status: userData.profile_status || (userData.visibility === 'public' ? 'approved' : 'pending'),
+            userId: userDoc.id,
+            email: userData.email
+          };
+          submissions.push(submissionData);
+        }
+      }
+      
+      console.log('Fetched submissions:', submissions);
+      setSubs(submissions);
+      
+    } catch (error) {
+      console.error("Error fetching submissions:", error);
+      // ใช้ข้อมูล demo หากเกิดข้อผิดพลาด
+      setSubs(DEMO.submissions);
+    }
+  };
+
   useEffect(() => {
     fetchStats();
     fetchUsers(); // เรียกข้อมูลผู้ใช้เมื่อโหลดหน้า
+    fetchTemplates(); // เรียกข้อมูล templates เมื่อโหลดหน้า
+    fetchSubmissions(); // เรียกข้อมูลคำขออนุมัติเมื่อโหลดหน้า
   }, []);
 
   const filteredUsers = useMemo(()=>{
@@ -226,11 +310,282 @@ export default function AdminDashboard() {
     return users.filter(s => [s.name,s.email,s.username,s.user_id,s.access_level,s[SECONDARY_FIELD.key]].join(" ").toLowerCase().includes(t));
   },[q,users]);
 
-  const approve = (id)=>{ setSubs(a=>a.map(x=>x.id===id?{...x,status:"approved"}:x)); setToast({type:"success", msg:`อนุมัติพอร์ต #${id}`}); };
-  const reject = (id)=>{ setSubs(a=>a.map(x=>x.id===id?{...x,status:"rejected"}:x)); setToast({type:"error", msg:`ส่งคำขอแก้ไข #${id}`}); };
+  // ฟังก์ชันอนุมัติคำขอ
+  const approve = async (id) => {
+    try {
+      // หา submission ที่ตรงกับ id
+      const submission = subs.find(s => s.id === id);
+      if (!submission) return;
+      
+      // อัปเดตใน Firestore
+      const userRef = doc(db, 'users', submission.userId);
+      await updateDoc(userRef, {
+        profile_status: 'approved',
+        updatedAt: serverTimestamp()
+      });
+      
+      // อัปเดต state
+      setSubs(a => a.map(x => x.id === id ? {...x, status: "approved"} : x));
+      setToast({type: "success", msg: `อนุมัติพอร์ต #${id} สำเร็จ`});
+      
+      // รีเฟรชข้อมูลสถิติ
+      fetchStats();
+      
+    } catch (error) {
+      console.error('Error approving submission:', error);
+      setToast({type: "error", msg: `เกิดข้อผิดพลาดในการอนุมัติพอร์ต #${id}`});
+    }
+  };
+  
+  // ฟังก์ชันปฏิเสธคำขอ
+  const reject = async (id) => {
+    try {
+      // หา submission ที่ตรงกับ id
+      const submission = subs.find(s => s.id === id);
+      if (!submission) return;
+      
+      // อัปเดตใน Firestore
+      const userRef = doc(db, 'users', submission.userId);
+      await updateDoc(userRef, {
+        profile_status: 'rejected',
+        updatedAt: serverTimestamp()
+      });
+      
+      // อัปเดต state
+      setSubs(a => a.map(x => x.id === id ? {...x, status: "rejected"} : x));
+      setToast({type: "error", msg: `ส่งคำขอแก้ไข #${id}`});
+      
+      // รีเฟรชข้อมูลสถิติ
+      fetchStats();
+      
+    } catch (error) {
+      console.error('Error rejecting submission:', error);
+      setToast({type: "error", msg: `เกิดข้อผิดพลาดในการปฏิเสธพอร์ต #${id}`});
+    }
+  };
+
+  // ฟังก์ชันจัดการผู้ใช้
+  const updateUserRole = async (userId, newRole) => {
+    try {
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        access_level: newRole,
+        updatedAt: serverTimestamp()
+      });
+      
+      // อัปเดต state
+      setUsers(users.map(user => 
+        user.user_id === userId ? {...user, access_level: newRole} : user
+      ));
+      
+      setToast({type: "success", msg: `เปลี่ยนสิทธิ์ผู้ใช้เป็น ${newRole} สำเร็จ`});
+      
+    } catch (error) {
+      console.error('Error updating user role:', error);
+      setToast({type: "error", msg: "เกิดข้อผิดพลาดในการเปลี่ยนสิทธิ์ผู้ใช้"});
+    }
+  };
+
+  const toggleUserStatus = async (userId, currentStatus) => {
+    try {
+      const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        status: newStatus,
+        updatedAt: serverTimestamp()
+      });
+      
+      // อัปเดต state
+      setUsers(users.map(user => 
+        user.user_id === userId ? {...user, status: newStatus} : user
+      ));
+      
+      const actionText = newStatus === 'suspended' ? 'ระงับ' : 'ปลดระงับ';
+      setToast({type: "success", msg: `${actionText}ผู้ใช้สำเร็จ`});
+      
+    } catch (error) {
+      console.error('Error toggling user status:', error);
+      setToast({type: "error", msg: "เกิดข้อผิดพลาดในการเปลี่ยนสถานะผู้ใช้"});
+    }
+  };
+
+  // ฟังก์ชันเปิด modal แก้ไขข้อมูลผู้ใช้
+  const openEditModal = (user) => {
+    setEditingUser({
+      user_id: user.user_id,
+      name: user.name,
+      username: user.username,
+      email: user.email,
+      program: user.program || '',
+      access_level: user.access_level
+    });
+    setShowEditModal(true);
+  };
+
+  // ฟังก์ชันบันทึกการแก้ไขข้อมูลผู้ใช้
+  const saveUserEdit = async () => {
+    try {
+      const userRef = doc(db, 'users', editingUser.user_id);
+      await updateDoc(userRef, {
+        name: editingUser.name,
+        username: editingUser.username,
+        email: editingUser.email,
+        program: editingUser.program,
+        access_level: editingUser.access_level,
+        updatedAt: serverTimestamp()
+      });
+      
+      // อัพเดท state
+      setUsers(users.map(user => 
+        user.user_id === editingUser.user_id ? {
+          ...user,
+          name: editingUser.name,
+          username: editingUser.username,
+          email: editingUser.email,
+          program: editingUser.program,
+          access_level: editingUser.access_level
+        } : user
+      ));
+      
+      setToast({type: "success", msg: "แก้ไขข้อมูลผู้ใช้สำเร็จ"});
+      setShowEditModal(false);
+      setEditingUser(null);
+      
+    } catch (error) {
+      console.error('Error updating user:', error);
+      setToast({type: "error", msg: "เกิดข้อผิดพลาดในการแก้ไขข้อมูลผู้ใช้"});
+    }
+  };
+
+  // ฟังก์ชันเปิด confirmation dialog สำหรับการลบ
+  const openDeleteConfirm = (userId) => {
+    setDeletingUserId(userId);
+    setShowDeleteConfirm(true);
+  };
+
+  // ฟังก์ชันลบผู้ใช้
+  const deleteUser = async () => {
+    try {
+      // ในกรณีจริงอาจต้องลบข้อมูลที่เกี่ยวข้องก่อน (profile, education, works)
+      // แต่ในที่นี้จะเปลี่ยนเป็น soft delete (เปลี่ยนสถานะเป็น deleted)
+      const userRef = doc(db, 'users', deletingUserId);
+      await updateDoc(userRef, {
+        status: 'deleted',
+        deletedAt: serverTimestamp()
+      });
+      
+      // ลบออกจาก state
+      setUsers(users.filter(user => user.user_id !== deletingUserId));
+      
+      setToast({type: "success", msg: "ลบผู้ใช้สำเร็จ"});
+      setShowDeleteConfirm(false);
+      setDeletingUserId(null);
+      
+      // รีเฟรชสถิติ
+      fetchStats();
+      
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      setToast({type: "error", msg: "เกิดข้อผิดพลาดในการลบผู้ใช้"});
+    }
+  };
+
   const setDefaultTemplate = (template_id)=> setToast({type:"success", msg:`ตั้งค่าเทมเพลตเริ่มต้น: ${template_id}`});
   const toggleTemplateActive = (template_id)=> setTemplates(arr=>arr.map(t=>t.template_id===template_id?{...t,is_active:!t.is_active}:t));
   const addCategory = ()=> setCategories(prev=>[...prev, { id:`C${String(prev.length+1).padStart(2,"0")}`, name:`หมวดหมู่ใหม่ ${prev.length+1}`} ]);
+
+  // เทมเพลตตัวเลือก 3 แบบ
+  const templateOptions = [
+    {
+      id: 'classic',
+      name: 'Classic CV',
+      type: 'classic',
+      desc: 'เรียบง่าย เหมาะสำหรับทุกสาขา',
+      color: '#2563eb',
+      preview: 'C',
+      category: 'ทั่วไป',
+      layout: 'A4 Classic'
+    },
+    {
+      id: 'modern',
+      name: 'Modern Gradient',
+      type: 'modern',
+      desc: 'ทันสมัย มีสีสัน เหมาะสำหรับครีเอทีฟ',
+      color: '#16a34a',
+      preview: 'M',
+      category: 'ทั่วไป',
+      layout: 'A4 Modern'
+    },
+    {
+      id: 'timeline',
+      name: 'Timeline',
+      type: 'timeline',
+      desc: 'แสดงเป็นไทม์ไลน์ เหมาะสำหรับแสดงประสบการณ์',
+      color: '#059669',
+      preview: 'T',
+      category: 'กิจกรรม/ผลงาน',
+      layout: 'A4 Timeline'
+    }
+  ];
+
+  // ฟังก์ชันสร้างเทมเพลตใหม่
+  const createNewTemplate = async () => {
+    if (!selectedTemplateType) {
+      setToast({type: "error", msg: "กรุณาเลือกประเภทเทมเพลต"});
+      return;
+    }
+
+    try {
+      const selectedOption = templateOptions.find(t => t.id === selectedTemplateType);
+      if (!selectedOption) return;
+
+      // สร้าง unique template ID โดยเพิ่ม timestamp
+      const timestamp = Date.now();
+      const customId = `${selectedOption.id}_${timestamp}`;
+      
+      const templateData = {
+        ...selectedOption,
+        id: customId,
+        name: selectedOption.name, // ใช้ชื่อจาก templateOptions
+        template_id: customId,
+        sections: {
+          profile: true,
+          education: true,
+          works: true,
+          awards: true,
+          skills: true
+        },
+        layout_settings: {
+          columns: selectedOption.type === 'modern' || selectedOption.type === 'timeline' ? 1 : 2,
+          header_style: selectedOption.type === 'classic' ? 'centered' : selectedOption.type === 'modern' ? 'gradient' : 'timeline',
+          card_style: selectedOption.type === 'classic' ? 'minimal' : selectedOption.type
+        },
+        accent: selectedOption.color,
+        is_active: true,
+        isPublished: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        createdBy: 'admin',
+        updatedBy: 'admin'
+      };
+
+      // บันทึกลง Firestore
+      await setDoc(doc(collection(db, 'TEMPLATES'), customId), templateData);
+      
+      setToast({type: "success", msg: `สร้างเทมเพลต "${selectedOption.name}" สำเร็จ`});
+      
+      // รีเซ็ต modal
+      setShowTemplateModal(false);
+      setSelectedTemplateType('');
+      
+      // รีเฟรชรายการเทมเพลต
+      await fetchTemplates();
+      
+    } catch (error) {
+      console.error('Error creating template:', error);
+      setToast({type: "error", msg: "เกิดข้อผิดพลาดในการสร้างเทมเพลต"});
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50/60">
@@ -372,14 +727,17 @@ export default function AdminDashboard() {
               </div>
               <SimpleTable
                 columns={[
-                  { header: "รหัสผู้ใช้", accessor: "user_id", className: "w-[110px]" },
                   { header: "ชื่อ", accessor: "name" },
                   { header: "ชื่อผู้ใช้", accessor: "username", className: "w-[130px]" },
                   { header: SECONDARY_FIELD.label, className: "w-[160px]", cell: (r)=>r[SECONDARY_FIELD.key] || "-" },
                   { header: "อีเมล", accessor: "email", className: "min-w-[200px]" },
                   { header: "สถานะ", accessor: "status", className: "w-[120px]", cell: (r)=> <StatusBadge status={r.status}/> },
                   { header: "สิทธิ์เข้าถึง", accessor: "access_level", className: "w-[160px]", cell: (r) => (
-                    <select value={r.access_level} onChange={(e)=>{/* TODO: update role */}} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">
+                    <select 
+                      value={r.access_level} 
+                      onChange={(e) => updateUserRole(r.user_id, e.target.value)} 
+                      className="rounded-lg border border-slate-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
                       <option value="student">student</option>
                       <option value="teacher">teacher</option>
                       <option value="admin">admin</option>
@@ -387,11 +745,30 @@ export default function AdminDashboard() {
                   ) },
                   { header: "การจัดการ", className: "w-[220px]", cell: (r)=> (
                     <div className="flex items-center gap-2">
-                      <Button variant="outline" className="px-3 py-1.5"><Pencil className="h-4 w-4"/> แก้ไข</Button>
-                      <Button variant="outline" className="px-3 py-1.5">
-                        {r.status === "active" ? <><KeyRound className="h-4 w-4"/> ระงับ</> : <><BadgeCheck className="h-4 w-4"/> ปลดระงับ</>}
+                      <Button 
+                        variant="outline" 
+                        className="px-3 py-1.5 text-xs"
+                        onClick={() => openEditModal(r)}
+                      >
+                        <Pencil className="h-4 w-4"/> แก้ไข
                       </Button>
-                      <Button variant="danger" className="px-3 py-1.5"><Trash2 className="h-4 w-4"/> ลบ</Button>
+                      <Button 
+                        variant="outline" 
+                        className={`px-3 py-1.5 text-xs ${r.status === "active" ? "text-orange-600 border-orange-300" : "text-green-600 border-green-300"}`}
+                        onClick={() => toggleUserStatus(r.user_id, r.status)}
+                      >
+                        {r.status === "active" ? 
+                          <><KeyRound className="h-4 w-4"/> ระงับ</> : 
+                          <><BadgeCheck className="h-4 w-4"/> ปลดระงับ</>
+                        }
+                      </Button>
+                      <Button 
+                        variant="danger" 
+                        className="px-3 py-1.5 text-xs"
+                        onClick={() => openDeleteConfirm(r.user_id)}
+                      >
+                        <Trash2 className="h-4 w-4"/> ลบ
+                      </Button>
                     </div>
                   ) },
                 ]}
@@ -457,23 +834,51 @@ export default function AdminDashboard() {
             <section className="space-y-4">
               <div className="flex items-center justify-between">
                 <h1 className="text-xl font-semibold text-slate-900 flex items-center gap-2"><Palette className="h-5 w-5"/> เทมเพลต (TEMPLATE)</h1>
-                <Button variant="outline">+ สร้างเทมเพลตใหม่</Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => window.open('/admin-dashboard/initialize-templates', '_blank')}>
+                    🔧 Initialize Templates
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowTemplateModal(true)}>+ สร้างเทมเพลตใหม่</Button>
+                </div>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {templates.map(t => (
-                  <div key={t.template_id} className="rounded-2xl bg-white ring-1 ring-slate-200/60 overflow-hidden">
-                    <div className="h-28 bg-slate-100 grid place-items-center">
-                      <div className="h-16 w-24 rounded-md grid place-items-center text-sm font-semibold" style={{ background: t.accent, color: "white" }}>{t.preview}</div>
+                  <div key={t.template_id} className="rounded-2xl bg-white ring-1 ring-slate-200/60 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                    <div className="h-40 bg-slate-100 grid place-items-center relative">
+                      <div className="h-24 w-32 rounded-lg grid place-items-center text-lg font-semibold shadow-md" style={{ background: t.accent, color: "white" }}>
+                        {t.preview}
+                      </div>
+                      <div className="absolute top-2 right-2">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${t.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                          {t.is_active ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}
+                        </span>
+                      </div>
                     </div>
-                    <div className="p-3 space-y-1.5">
-                      <div className="font-medium text-slate-900">{t.name}</div>
-                      <div className="text-xs text-slate-500">ID: {t.template_id} • Layout: {t.layout}</div>
-                      <div className="text-xs text-slate-500">หมวดหมู่: {t.category}</div>
-                      <div className="mt-2 flex items-center gap-2">
-                        <Button className="px-3 py-1.5" onClick={()=>setDefaultTemplate(t.template_id)}>ตั้งค่าเริ่มต้น</Button>
-                        <Button variant="outline" className="px-3 py-1.5">แก้ไข</Button>
-                        <label className="inline-flex items-center gap-1 text-xs">
-                          <input type="checkbox" checked={t.is_active} onChange={()=>toggleTemplateActive(t.template_id)} /> ใช้งาน
+                    <div className="p-4 space-y-3">
+                      <div>
+                        <div className="font-semibold text-slate-900 text-lg mb-1">{t.name}</div>
+                        <div className="text-sm text-slate-600 mb-2">{t.description || 'เทมเพลตสำหรับสร้าง Portfolio'}</div>
+                        <div className="text-xs text-slate-500 space-y-1">
+                          <div>ID: <span className="font-mono">{t.template_id}</span></div>
+                          <div>Layout: {t.layout}</div>
+                          <div>หมวดหมู่: {t.category}</div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                        <Button className="px-4 py-2 text-sm" onClick={()=>setDefaultTemplate(t.template_id)}>
+                          ตั้งค่าเริ่มต้น
+                        </Button>
+                        <Button variant="outline" className="px-4 py-2 text-sm">
+                          แก้ไข
+                        </Button>
+                        <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={t.is_active} 
+                            onChange={()=>toggleTemplateActive(t.template_id)}
+                            className="w-4 h-4 text-blue-600 rounded"
+                          /> 
+                          ใช้งาน
                         </label>
                       </div>
                     </div>
@@ -522,6 +927,213 @@ export default function AdminDashboard() {
           )}
         </main>
       </div>
+
+      {/* Create Template Modal */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-slate-900">สร้างเทมเพลตใหม่</h3>
+                <button
+                  onClick={() => setShowTemplateModal(false)}
+                  className="p-1 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  <X className="h-5 w-5 text-slate-500" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-3">
+                  เลือกประเภทเทมเพลต
+                </label>
+                <div className="space-y-3">
+                  {templateOptions.map((option) => (
+                    <label
+                      key={option.id}
+                      className={`flex items-center p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                        selectedTemplateType === option.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="templateType"
+                        value={option.id}
+                        checked={selectedTemplateType === option.id}
+                        onChange={(e) => setSelectedTemplateType(e.target.value)}
+                        className="sr-only"
+                      />
+                      <div className="flex items-center w-full gap-3">
+                        <div
+                          className="w-12 h-8 rounded-md flex items-center justify-center text-white font-semibold text-sm"
+                          style={{ backgroundColor: option.color }}
+                        >
+                          {option.preview}
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-medium text-slate-900">{option.name}</div>
+                          <div className="text-sm text-slate-600">{option.desc}</div>
+                          <div className="text-xs text-slate-500 mt-1">
+                            หมวดหมู่: {option.category} • Layout: {option.layout}
+                          </div>
+                        </div>
+                        {selectedTemplateType === option.id && (
+                          <div className="text-blue-500">
+                            <Check className="h-5 w-5" />
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-slate-200 flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowTemplateModal(false);
+                  setSelectedTemplateType('');
+                }}
+              >
+                ยกเลิก
+              </Button>
+              <Button
+                onClick={createNewTemplate}
+                disabled={!selectedTemplateType}
+                className={`${
+                  !selectedTemplateType
+                    ? 'opacity-50 cursor-not-allowed'
+                    : ''
+                }`}
+              >
+                สร้างเทมเพลต
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal แก้ไขข้อมูลผู้ใช้ */}
+      {showEditModal && editingUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-xl font-semibold mb-4">แก้ไขข้อมูลผู้ใช้</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อ</label>
+                <input
+                  type="text"
+                  value={editingUser.name}
+                  onChange={(e) => setEditingUser({...editingUser, name: e.target.value})}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อผู้ใช้</label>
+                <input
+                  type="text"
+                  value={editingUser.username}
+                  onChange={(e) => setEditingUser({...editingUser, username: e.target.value})}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">อีเมล</label>
+                <input
+                  type="email"
+                  value={editingUser.email}
+                  onChange={(e) => setEditingUser({...editingUser, email: e.target.value})}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{SECONDARY_FIELD.label}</label>
+                <input
+                  type="text"
+                  value={editingUser.program}
+                  onChange={(e) => setEditingUser({...editingUser, program: e.target.value})}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">สิทธิ์</label>
+                <select
+                  value={editingUser.access_level}
+                  onChange={(e) => setEditingUser({...editingUser, access_level: e.target.value})}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="student">student</option>
+                  <option value="teacher">teacher</option>
+                  <option value="admin">admin</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingUser(null);
+                }}
+                className="flex-1"
+              >
+                ยกเลิก
+              </Button>
+              <Button
+                onClick={saveUserEdit}
+                className="flex-1"
+              >
+                บันทึก
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog สำหรับการลบ */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 className="h-6 w-6 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">ยืนยันการลบผู้ใช้</h3>
+                <p className="text-sm text-gray-500">การกระทำนี้ไม่สามารถยกเลิกได้</p>
+              </div>
+            </div>
+            <p className="text-gray-700 mb-6">
+              คุณแน่ใจหรือไม่ที่จะลบผู้ใช้นี้? ข้อมูลทั้งหมดจะถูกเปลี่ยนสถานะเป็น "ถูกลบ"
+            </p>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setDeletingUserId(null);
+                }}
+                className="flex-1"
+              >
+                ยกเลิก
+              </Button>
+              <Button
+                variant="danger"
+                onClick={deleteUser}
+                className="flex-1"
+              >
+                ลบผู้ใช้
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50">

@@ -14,6 +14,7 @@ import PortfolioBuilder from "./components/PortfolioBuilder";
 import AdminDashboard from "./components/AdminDashboard";
 import TemplateEdit from "./components/TemplateEdit";
 import TemplateStyle from "./components/TemplateStyle";
+import InitializeTemplates from "./components/InitializeTemplates";
 import RequireAuth, { RequireAdmin } from "./components/PrivateRoute";
 import UserLayout from "./components/UserLayout";
 
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="/admin-dashboard" element={<AdminDashboard />} />
           <Route path="/admin-dashboard/templates" element={<TemplateEdit />} />
           <Route path="/admin-dashboard/styles" element={<TemplateStyle />} />
+          <Route path="/admin-dashboard/initialize-templates" element={<InitializeTemplates />} />
         </Route>
       </Route>
 

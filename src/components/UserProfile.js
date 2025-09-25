@@ -1,8 +1,9 @@
 // src/components/UserProfile.js
 import React, { useEffect, useState } from "react";
 import { getFirestore, doc, getDoc, setDoc, updateDoc, serverTimestamp, collection, query, where, getDocs } from "firebase/firestore";
+import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "firebase/auth";
 import { useAuth } from "../contexts/AuthContext";
-import { User, Upload, Camera, Save, Eye, EyeOff, Phone, Sparkles, CheckCircle, Calendar } from "lucide-react";
+import { User, Upload, Camera, Save, Eye, EyeOff, Phone, Sparkles, CheckCircle, Calendar, Lock } from "lucide-react";
 
 import { uploadToCloudinary, createPreviewUrl } from "../utils/cloudinary";
 
@@ -29,6 +30,16 @@ export default function UserProfile() {
   });
   
   const [userDocId, setUserDocId] = useState(null); // เก็บ document ID ของผู้ใช้
+  
+  // State สำหรับเปลี่ยนรหัสผ่าน
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
 
   // โหลดหรือสร้างเอกสารโปรไฟล์
   useEffect(() => {
@@ -134,6 +145,60 @@ export default function UserProfile() {
   );
 
   const onChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+
+  // ฟังก์ชันจัดการ form เปลี่ยนรหัสผ่าน
+  const onPasswordChange = (e) => {
+    setPasswordForm({ ...passwordForm, [e.target.name]: e.target.value });
+    // Clear error when user types
+    if (passwordError) setPasswordError('');
+  };
+
+  // ฟังก์ชันเปลี่ยนรหัสผ่าน
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    
+    // Validation
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordError('รหัสผ่านใหม่และการยืนยันรหัสผ่านไม่ตรงกัน');
+      return;
+    }
+    
+    if (passwordForm.newPassword.length < 6) {
+      setPasswordError('รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร');
+      return;
+    }
+    
+    setChangingPassword(true);
+    setPasswordError('');
+    
+    try {
+      // Reauthenticate user with current password
+      const credential = EmailAuthProvider.credential(user.email, passwordForm.currentPassword);
+      await reauthenticateWithCredential(user, credential);
+      
+      // Update password
+      await updatePassword(user, passwordForm.newPassword);
+      
+      // Clear form and show success
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setPasswordSuccess(true);
+      
+      // Hide success message after 3 seconds
+      setTimeout(() => setPasswordSuccess(false), 3000);
+      
+    } catch (error) {
+      console.error('Error changing password:', error);
+      if (error.code === 'auth/wrong-password') {
+        setPasswordError('รหัสผ่านปัจจุบันไม่ถูกต้อง');
+      } else if (error.code === 'auth/weak-password') {
+        setPasswordError('รหัสผ่านใหม่ไม่แข็งแรงพอ');
+      } else {
+        setPasswordError('เกิดข้อผิดพลาดในการเปลี่ยนรหัสผ่าน กรุณาลองใหม่');
+      }
+    } finally {
+      setChangingPassword(false);
+    }
+  };
 
   const onPickPhoto = async (e) => {
     const file = e.target.files?.[0];
@@ -259,6 +324,83 @@ export default function UserProfile() {
                 </div>
               </div>
               
+              {/* Change Password Section */}
+              <div className="mt-6 p-4 bg-yellow-50 rounded-xl border border-yellow-200">
+                <div className="flex items-center gap-2 mb-4">
+                  <Lock className="w-4 h-4 text-yellow-600" />
+                  <label className="text-sm font-medium text-gray-700">เปลี่ยนรหัสผ่าน</label>
+                </div>
+                
+                <form onSubmit={handleChangePassword} className="space-y-3">
+                  <div>
+                    <input
+                      type="password"
+                      name="currentPassword"
+                      placeholder="รหัสผ่านปัจจุบัน"
+                      value={passwordForm.currentPassword}
+                      onChange={onPasswordChange}
+                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="password"
+                      name="newPassword"
+                      placeholder="รหัสผ่านใหม่ (อย่างน้อย 6 ตัวอักษร)"
+                      value={passwordForm.newPassword}
+                      onChange={onPasswordChange}
+                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="password"
+                      name="confirmPassword"
+                      placeholder="ยืนยันรหัสผ่านใหม่"
+                      value={passwordForm.confirmPassword}
+                      onChange={onPasswordChange}
+                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                      required
+                    />
+                  </div>
+                  
+                  {passwordError && (
+                    <div className="p-2 bg-red-50 border border-red-200 rounded-lg">
+                      <p className="text-sm text-red-600">{passwordError}</p>
+                    </div>
+                  )}
+                  
+                  {passwordSuccess && (
+                    <div className="p-2 bg-green-50 border border-green-200 rounded-lg">
+                      <p className="text-sm text-green-600 flex items-center gap-1">
+                        <CheckCircle className="w-4 h-4" />
+                        เปลี่ยนรหัสผ่านสำเร็จ
+                      </p>
+                    </div>
+                  )}
+                  
+                  <button
+                    type="submit"
+                    disabled={changingPassword}
+                    className="w-full px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm font-medium transition-colors"
+                  >
+                    {changingPassword ? (
+                      <>
+                        <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
+                        กำลังเปลี่ยนรหัสผ่าน...
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-4 h-4" />
+                        เปลี่ยนรหัสผ่าน
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+
               {/* Visibility Settings */}
               <div className="mt-6 p-4 bg-gray-50 rounded-xl">
                 <div className="flex items-center gap-2 mb-3">

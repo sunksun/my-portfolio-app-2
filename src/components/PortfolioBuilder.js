@@ -2,12 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { getFirestore, collection, query, where, orderBy, getDocs, doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { FileText, Palette, Eye, Download, Plus, X, Settings, Sparkles, User, Award, GraduationCap, Briefcase, CheckSquare, Square, ArrowLeft, ArrowRight } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import TemplateRenderer from './templates/TemplateRenderer';
+import { fetchActiveTemplates, prepareTemplateData } from '../services/TemplateService';
 
 export default function PortfolioBuilder() {
   const [profile, setProfile] = useState(null);
   const [educations, setEducations] = useState([]);
   const [works, setWorks] = useState([]);
-  const [template, setTemplate] = useState('default');
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [availableTemplates, setAvailableTemplates] = useState([]);
   const [previewMode, setPreviewMode] = useState(false);
   const [portfolioTitle, setPortfolioTitle] = useState('Portfolio ของฉัน');
   const [portfolioDesc, setPortfolioDesc] = useState('รวมผลงานและประวัติการศึกษาของฉัน');
@@ -17,6 +21,19 @@ export default function PortfolioBuilder() {
   const [currentStep, setCurrentStep] = useState(1);
   const { user: currentUser } = useAuth();
   const db = getFirestore();
+
+  // ฟังก์ชันโหลด templates จาก Firebase
+  const loadTemplates = React.useCallback(async () => {
+    try {
+      const templates = await fetchActiveTemplates();
+      setAvailableTemplates(templates);
+      if (templates.length > 0 && !selectedTemplate) {
+        setSelectedTemplate(templates[0]);
+      }
+    } catch (error) {
+      console.error('Error loading templates:', error);
+    }
+  }, [selectedTemplate]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -70,7 +87,9 @@ export default function PortfolioBuilder() {
       }
     };
     fetchData();
-  }, [currentUser, db]);
+    loadTemplates();
+  }, [currentUser, db, loadTemplates]);
+
 
 
   // Save customization data to Firebase
@@ -95,10 +114,17 @@ export default function PortfolioBuilder() {
     }
   };
 
-  const handleTemplateChange = (e) => setTemplate(e.target.value);
+  const handleTemplateSelect = (template) => {
+    setSelectedTemplate(template);
+    if (template.color) {
+      setColorTheme(template.color);
+    }
+  };
   const handlePreview = () => setPreviewMode(true);
   const handleBack = () => setPreviewMode(false);
-  const handleDownload = () => {
+  
+  // Download as HTML
+  const handleDownloadHTML = () => {
     const html = document.getElementById('portfolio-preview').outerHTML;
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
@@ -109,183 +135,56 @@ export default function PortfolioBuilder() {
     URL.revokeObjectURL(url);
   };
 
+  // Download as PNG
+  const handleDownloadPNG = async () => {
+    const element = document.getElementById('portfolio-preview');
+    if (!element) return;
+
+    try {
+      const canvas = await html2canvas(element, {
+        backgroundColor: '#ffffff',
+        scale: 2, // Higher resolution
+        useCORS: true,
+        allowTaint: true,
+        scrollX: 0,
+        scrollY: 0,
+        width: element.scrollWidth,
+        height: element.scrollHeight
+      });
+
+      // Convert to blob and download
+      canvas.toBlob((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `portfolio-${new Date().toISOString().split('T')[0]}.png`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    } catch (error) {
+      console.error('Error generating PNG:', error);
+      alert('เกิดข้อผิดพลาดในการสร้างไฟล์ PNG');
+    }
+  };
+
   const displayWorks = works;
 
-  const renderPortfolio = () => (
-    <div id="portfolio-preview" className="bg-white">
-      {/* Header Section */}
-      <div className="relative overflow-hidden" style={{ backgroundColor: colorTheme }}>
-        <div className="absolute inset-0 bg-black/10"></div>
-        <div className="relative px-8 py-12">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex flex-col md:flex-row items-center gap-8">
-              {/* Profile Photo */}
-              <div className="flex-shrink-0">
-                {profile?.photoURL ? (
-                  <img 
-                    src={profile.photoURL} 
-                    alt="profile" 
-                    className="w-32 h-32 rounded-full object-cover border-4 border-white shadow-xl" 
-                  />
-                ) : (
-                  <div className="w-32 h-32 rounded-full bg-white/20 border-4 border-white flex items-center justify-center">
-                    <User className="h-16 w-16 text-white" />
-                  </div>
-                )}
-              </div>
-              
-              {/* Personal Info */}
-              <div className="text-center md:text-left text-white">
-                <h1 className="text-4xl font-bold mb-2">{profile?.name || profile?.fullName || 'ชื่อ-นามสกุล'}</h1>
-                <p className="text-xl mb-4 text-white/90">{portfolioTitle}</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-white/80">
-                  <div>📧 {profile?.email}</div>
-                  {profile?.phone && <div>📞 {profile.phone}</div>}
-                  {profile?.address && <div>📍 {profile.address}</div>}
-                  {profile?.dateOfBirth && <div>🎂 {profile.dateOfBirth}</div>}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+  // เตรียมข้อมูลสำหรับ template
+  const templateData = prepareTemplateData(profile, educations, works, skills);
 
-      {/* Main Content */}
-      <div className="max-w-4xl mx-auto px-8 py-8">
-        {/* About Section */}
-        {portfolioDesc && (
-          <section className="mb-8">
-            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2" style={{ color: colorTheme }}>
-              <User className="h-6 w-6" />
-              เกี่ยวกับฉัน
-            </h2>
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-gray-700 leading-relaxed">{portfolioDesc}</p>
-            </div>
-          </section>
-        )}
+  const renderPortfolio = () => {
+    if (!selectedTemplate) {
+      return <div className="p-8 text-center text-gray-500">กรุณาเลือก Template</div>;
+    }
 
-        {/* Skills Section */}
-        {skills.length > 0 && (
-          <section className="mb-8">
-            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2" style={{ color: colorTheme }}>
-              <Sparkles className="h-6 w-6" />
-              ทักษะและความสามารถ
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {skills.map((skill, idx) => (
-                <div key={idx} className="bg-gray-50 rounded-lg px-4 py-3 text-center border-l-4" style={{ borderColor: colorTheme }}>
-                  <span className="font-medium text-gray-800">{skill}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Education Section */}
-        {educations.length > 0 && (
-          <section className="mb-8">
-            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2" style={{ color: colorTheme }}>
-              <GraduationCap className="h-6 w-6" />
-              ประวัติการศึกษา
-            </h2>
-            <div className="space-y-4">
-              {educations.map(edu => (
-                <div key={edu.id} className="bg-gray-50 rounded-lg p-6 border-l-4" style={{ borderColor: colorTheme }}>
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800">{edu.degree}</h3>
-                      <p className="text-gray-600 mt-1">เกรดเฉลี่ย: {edu.gpa}</p>
-                      <p className="text-gray-500 text-sm mt-1">ระยะเวลา: {edu.period}</p>
-                    </div>
-                    <div className="mt-2 md:mt-0">
-                      <span className="inline-block px-3 py-1 bg-white rounded-full text-xs text-gray-500">
-                        ID: {edu.education_id}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Awards Section */}
-        {works.length > 0 && (
-          <section className="mb-8">
-            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2" style={{ color: colorTheme }}>
-              <Award className="h-6 w-6" />
-              รางวัลและความสำเร็จ
-            </h2>
-            <div className="space-y-4">
-              {works.map((work, idx) => (
-                <div key={idx} className="bg-gray-50 rounded-lg p-6 border-l-4" style={{ borderColor: colorTheme }}>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">{work.title}</h3>
-                  {work.description && (
-                    <p className="text-gray-600 mb-2">{work.description}</p>
-                  )}
-                  <div className="flex flex-wrap gap-2 text-sm text-gray-500">
-                    <span className="bg-white px-2 py-1 rounded">หมวดหมู่: {work.category}</span>
-                    {work.uploaded_at && (
-                      <span className="bg-white px-2 py-1 rounded">
-                        วันที่: {work.uploaded_at?.toDate?.().toLocaleDateString?.('th-TH') || ''}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Works Portfolio Section */}
-        {displayWorks.length > 0 && (
-          <section className="mb-8">
-            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2" style={{ color: colorTheme }}>
-              <Briefcase className="h-6 w-6" />
-              ผลงานและโครงการ
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {displayWorks.map(work => (
-                <div key={work.id} className="bg-gray-50 rounded-lg overflow-hidden border-l-4" style={{ borderColor: colorTheme }}>
-                  <div className="p-6">
-                    <h3 className="text-lg font-semibold text-gray-800 mb-2">{work.title}</h3>
-                    <p className="text-gray-600 text-sm mb-3">{work.description}</p>
-                    
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      <span className="bg-white px-3 py-1 rounded-full text-xs font-medium" style={{ color: colorTheme }}>
-                        {work.category}
-                      </span>
-                    </div>
-                    
-                    {work.file_path && (
-                      <a 
-                        href={work.file_path} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg hover:opacity-90 transition-opacity"
-                        style={{ backgroundColor: colorTheme }}
-                      >
-                        <Eye className="h-4 w-4" />
-                        ดูผลงาน
-                      </a>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-      </div>
-
-      {/* Footer */}
-      <div className="bg-gray-100 px-8 py-6">
-        <div className="max-w-4xl mx-auto text-center text-gray-500 text-sm">
-          <p>Portfolio สร้างเมื่อ {new Date().toLocaleDateString('th-TH')}</p>
-        </div>
-      </div>
-    </div>
-  );
+    return (
+      <TemplateRenderer 
+        template={selectedTemplate}
+        data={templateData}
+        colorTheme={colorTheme}
+      />
+    );
+  };
 
 
   if (!currentUser) {
@@ -330,13 +229,22 @@ export default function PortfolioBuilder() {
                   <p className="text-sm text-gray-500">{portfolioTitle}</p>
                 </div>
               </div>
-              <button
-                onClick={handleDownload}
-                className="inline-flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-200 shadow-lg hover:shadow-xl"
-              >
-                <Download className="h-4 w-4" />
-                ดาวน์โหลด Portfolio
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleDownloadHTML}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-lg hover:shadow-xl"
+                >
+                  <Download className="h-4 w-4" />
+                  HTML
+                </button>
+                <button
+                  onClick={handleDownloadPNG}
+                  className="inline-flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                >
+                  <Download className="h-4 w-4" />
+                  ดาวน์โหลด PNG
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -345,7 +253,9 @@ export default function PortfolioBuilder() {
         <div className="py-8 px-4">
           <div className="max-w-4xl mx-auto">
             <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
-              {renderPortfolio()}
+              <div id="portfolio-preview">
+                {renderPortfolio()}
+              </div>
             </div>
           </div>
         </div>
@@ -448,25 +358,39 @@ export default function PortfolioBuilder() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[
-                  { id: 'default', name: 'Classic', desc: 'เรียบง่าย เหมาะสำหรับทุกสาขา', preview: 'bg-white border-2' },
-                  { id: 'modern', name: 'Modern', desc: 'ทันสมัย มีสีสัน เหมาะสำหรับครีเอทีฟ', preview: 'bg-gradient-to-br from-pink-100 to-blue-100' },
-                  { id: 'professional', name: 'Professional', desc: 'เป็นทางการ เหมาะสำหรับบิซิเนส', preview: 'bg-gray-50 border-2 border-gray-300' }
-                ].map((temp) => (
+                {availableTemplates.map((template) => (
                   <div
-                    key={temp.id}
-                    onClick={() => setTemplate(temp.id)}
+                    key={template.id}
+                    onClick={() => handleTemplateSelect(template)}
                     className={`cursor-pointer rounded-xl border-2 p-4 transition-all duration-200 hover:shadow-lg ${
-                      template === temp.id
+                      selectedTemplate?.id === template.id
                         ? 'border-blue-500 ring-4 ring-blue-100 shadow-lg'
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
-                    <div className={`w-full h-32 rounded-lg mb-4 ${temp.preview} flex items-center justify-center`}>
-                      <div className="text-xs text-gray-500">{temp.name} Preview</div>
+                    <div className="w-full h-32 rounded-lg mb-4 overflow-hidden bg-gray-50 flex items-center justify-center">
+                      <div className="transform scale-[0.15] origin-top-left w-[400px] h-[300px]">
+                        <TemplateRenderer 
+                          template={template}
+                          data={{
+                            profile: { name: 'ตัวอย่าง', portfolioTitle: template.name },
+                            educations: [{ degree: 'ปริญญาตรี', gpa: '3.50' }],
+                            works: [{ title: 'โครงการตัวอย่าง', category: 'โครงการ' }],
+                            skills: ['Skill 1', 'Skill 2']
+                          }}
+                          colorTheme={template.color}
+                        />
+                      </div>
                     </div>
-                    <h3 className="font-semibold text-gray-900 mb-1">{temp.name}</h3>
-                    <p className="text-sm text-gray-600">{temp.desc}</p>
+                    <h3 className="font-semibold text-gray-900 mb-1">{template.name}</h3>
+                    <p className="text-sm text-gray-600">{template.desc || 'Template สำหรับสร้าง Portfolio'}</p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <div 
+                        className="w-4 h-4 rounded-full border border-gray-300" 
+                        style={{ backgroundColor: template.color }}
+                      ></div>
+                      <span className="text-xs text-gray-500">{template.type}</span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -618,7 +542,7 @@ export default function PortfolioBuilder() {
                   </div>
                   <div className="text-sm text-gray-600">
                     <div>ชื่อ: {portfolioTitle}</div>
-                    <div>เทมเพลต: {template}</div>
+                    <div>เทมเพลต: {selectedTemplate?.name || 'ไม่ได้เลือก'}</div>
                     <div>สี: {colorTheme}</div>
                   </div>
                 </div>
@@ -678,13 +602,22 @@ export default function PortfolioBuilder() {
                 <ArrowRight className="h-4 w-4" />
               </button>
             ) : (
-              <button
-                onClick={handlePreview}
-                className="inline-flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700"
-              >
-                <Eye className="h-4 w-4" />
-                ดูตัวอย่าง
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={handlePreview}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
+                >
+                  <Eye className="h-4 w-4" />
+                  ดูตัวอย่าง
+                </button>
+                <button
+                  onClick={handleDownloadPNG}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700"
+                >
+                  <Download className="h-4 w-4" />
+                  ดาวน์โหลด PNG
+                </button>
+              </div>
             )}
           </div>
         </div>
